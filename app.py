@@ -44,7 +44,7 @@ st.markdown("""
     .team-a { background: #3b82f6 !important; color: white !important; border: 2px solid white !important; }
     .team-b { background: #ef4444 !important; color: white !important; border: 2px solid white !important; }
     .no-team { background: white !important; color: black !important; border: 1px solid #2e7d32 !important; }
-    .wa-btn { background-color: #25D366; color: white !important; padding: 6px 12px; border-radius: 6px; text-decoration: none; font-weight: bold; display: inline-block; font-size: 12px; margin: 2px 0; }
+    .wa-btn { background-color: #25D366; color: white !important; padding: 10px 15px; border-radius: 8px; text-decoration: none; font-weight: bold; display: block; text-align: center; margin-top: 10px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -74,21 +74,26 @@ def get_data():
 
 match, joueurs, history = get_data()
 
-# --- ADMIN AUTH & CREATION ---
+# --- ADMIN PANEL ---
 with st.sidebar:
     st.header("🔐 Admin Panel")
     pw = st.text_input("Access Code", type="password")
-    is_admin = (pw == "foot!")
+    is_admin = (pw == "VOTRE_MOT_DE_PASSE")
     
     if is_admin:
         st.divider()
         with st.expander("🆕 Create New Match", expanded=not match):
             d = st.date_input("Match Date")
-            h = st.text_input("Start Time", "20:00")
+            col1, col2 = st.columns(2)
+            h_start = col1.text_input("Start Time", "20:00")
+            h_end = col2.text_input("End Time", "21:00")
             l = st.text_input("Stadium Name")
             m = st.text_input("Google Maps Link")
-            if st.button("Publish Match"):
-                conn.table("matches").insert({"date": str(d), "heure": h, "lieu": l, "maps_url": m, "is_finished": False}).execute()
+            if st.button("Publish Match", use_container_width=True):
+                conn.table("matches").insert({
+                    "date": str(d), "heure": h_start, "heure_fin": h_end, 
+                    "lieu": l, "maps_url": m, "is_finished": False
+                }).execute()
                 st.rerun()
 
 # --- MAIN UI ---
@@ -102,7 +107,7 @@ if match:
     st.markdown(f"""
     <div class="match-card">
         <h3>📅 Match: {match['date']}</h3>
-        <p>⏱️ <b>{match['heure']}</b> | 📍 {match['lieu']}</p>
+        <p>⏱️ <b>{match['heure']} — {match.get('heure_fin', 'N/A')}</b> | 📍 {match['lieu']}</p>
         <p>👥 <b>{len(main_squad)} / {limite_joueurs} Players</b> (+{len(waiting_list)} waiting)</p>
     </div>
     """, unsafe_allow_html=True)
@@ -128,9 +133,8 @@ if match:
         st.subheader("Automated 1-2-2 Lineup")
         
         pitch_html = '<div class="pitch-container">'
-        formation_coords = [
-            {"y": 88, "x": 50}, {"y": 65, "x": 25}, {"y": 65, "x": 75}, {"y": 25, "x": 25}, {"y": 25, "x": 75}
-        ]
+        formation_coords = [{"y": 88, "x": 50}, {"y": 65, "x": 25}, {"y": 65, "x": 75}, {"y": 25, "x": 25}, {"y": 25, "x": 75}]
+        
         team_a_p = [p for p in main_squad if p.get('team') == 'A']
         team_b_p = [p for p in main_squad if p.get('team') == 'B']
         others = [p for p in main_squad if p.get('team') not in ['A', 'B']]
@@ -147,8 +151,7 @@ if match:
         pitch_html += draw_team(team_a_p, "left")
         pitch_html += draw_team(team_b_p, "right")
         for i, p in enumerate(others):
-            y_pos = 10 + (i * 8)
-            pitch_html += f'<div class="player-label no-team" style="top:{y_pos}%; left:50%;">{p["nom_complet"]}</div>'
+            y_pos = 10 + (i * 8); pitch_html += f'<div class="player-label no-team" style="top:{y_pos}%; left:50%;">{p["nom_complet"]}</div>'
         st.markdown(pitch_html + '</div>', unsafe_allow_html=True)
 
     with t3:
@@ -156,62 +159,50 @@ if match:
             st.subheader("⚙️ Match Management")
             with st.expander("📝 Edit Match Details"):
                 with st.form("edit_details"):
-                    new_lieu = st.text_input("Stadium Name", value=match['lieu'])
-                    new_heure = st.text_input("Match Time", value=match['heure'])
-                    new_maps = st.text_input("Maps Link", value=match['maps_url'])
+                    u_lieu = st.text_input("Stadium Name", value=match['lieu'])
+                    c1, c2 = st.columns(2)
+                    u_start = c1.text_input("Start Time", value=match['heure'])
+                    u_end = c2.text_input("End Time", value=match.get('heure_fin', ''))
+                    u_maps = st.text_input("Maps Link", value=match['maps_url'])
                     if st.form_submit_button("Update Info"):
-                        conn.table("matches").update({"lieu": new_lieu, "heure": new_heure, "maps_url": new_maps}).eq("id", match['id']).execute()
+                        conn.table("matches").update({"lieu": u_lieu, "heure": u_start, "heure_fin": u_end, "maps_url": u_maps}).eq("id", match['id']).execute()
                         st.rerun()
 
-            st.divider()
             with st.expander("❌ Remove Players"):
                 for j in joueurs:
                     c1, c2 = st.columns([4, 1])
                     c1.write(f"{j['nom_complet']} ({j['statut']})")
-                    if c2.button("Kick", key=f"kick_{j['id']}"):
+                    if c2.button("Kick", key=f"k_{j['id']}"):
                         conn.table("participants").delete().eq("id", j['id']).execute()
                         st.rerun()
             
-            with st.expander("📢 Send WhatsApp Reminders"):
+            with st.expander("📢 WhatsApp Reminders"):
                 for j in main_squad:
                     if j.get('phone'):
                         msg = f"⚽ Match Reminder: Today at {match['heure']}! See you there."
                         wa_url = f"https://wa.me/{j['phone']}?text={msg.replace(' ', '%20')}"
-                        st.markdown(f'<a href="{wa_url}" target="_blank" class="wa-btn">Ping {j["nom_complet"]}</a>', unsafe_allow_html=True)
+                        st.markdown(f'<a href="{wa_url}" target="_blank" class="wa-btn" style="background-color:#25D366; display:inline-block; margin:2px; padding:5px 10px;">Ping {j["nom_complet"]}</a>', unsafe_allow_html=True)
 
             st.divider()
             st.subheader("🔀 Team Management")
             col_gen, col_clear = st.columns(2)
-            if len(main_squad) >= 10:
-                if col_gen.button("🔀 Generate Random Teams"):
-                    shuffled = main_squad.copy()
-                    random.shuffle(shuffled)
-                    for i, p in enumerate(shuffled):
-                        t = 'A' if i % 2 == 0 else 'B'
-                        conn.table("participants").update({"team": t}).eq("id", p['id']).execute()
-                    st.rerun()
-                if col_clear.button("🗑️ Clear Teams"):
-                    conn.table("participants").update({"team": None}).eq("match_id", match['id']).execute()
-                    st.rerun()
-                
-                if any(p.get('team') for p in main_squad):
-                    team_a = [p['nom_complet'] for p in main_squad if p.get('team') == 'A']
-                    team_b = [p['nom_complet'] for p in main_squad if p.get('team') == 'B']
-                    
-                    # Formatting the message for WhatsApp
-                    summary = f"⚽ *Teams:* \n\n*🔵 Team A:* {', '.join(team_a)}\n\n*🔴 Team B:* {', '.join(team_b)}"
-                    encoded_msg = summary.replace(" ", "%20").replace("\n", "%0A")
-                    share_url = f"https://wa.me/?text={encoded_msg}"
-                    
-                    # The button rendering
-                    st.markdown(f'''
-                        <a href="{share_url}" target="_blank" class="wa-btn" style="background-color:#075E54; width:100%; text-align:center; display:block; text-decoration:none;">
-                            📲 Share Teams on WhatsApp Group
-                        </a>
-                    ''', unsafe_allow_html=True)
+            if col_gen.button("🔀 Generate Teams"):
+                shuffled = main_squad.copy(); random.shuffle(shuffled)
+                for i, p in enumerate(shuffled):
+                    conn.table("participants").update({"team": 'A' if i % 2 == 0 else 'B'}).eq("id", p['id']).execute()
+                st.rerun()
+            if col_clear.button("🗑️ Clear Teams"):
+                conn.table("participants").update({"team": None}).eq("match_id", match['id']).execute()
+                st.rerun()
             
+            if any(p.get('team') for p in main_squad):
+                t_a = [p['nom_complet'] for p in main_squad if p.get('team') == 'A']
+                t_b = [p['nom_complet'] for p in main_squad if p.get('team') == 'B']
+                summary = f"⚽ *Teams:* \n\n*🔵 Team A:* {', '.join(t_a)}\n\n*🔴 Team B:* {', '.join(t_b)}"
+                share_url = f"https://wa.me/?text={summary.replace(' ', '%20').replace('\\n', '%0A')}"
+                st.markdown(f'<a href="{share_url}" target="_blank" class="wa-btn" style="background-color:#075E54;">📲 Share Teams on Group</a>', unsafe_allow_html=True)
+
             st.divider()
-            st.subheader("🚩 Archive & Danger Zone")
             with st.expander("🏁 Archive Match"):
                 with st.form("score"):
                     sa, sb = st.number_input("Team A", 0), st.number_input("Team B", 0)
@@ -229,4 +220,4 @@ if match:
     with t4:
         for hm in history: st.write(f"📅 {hm['date']} | Team A {hm['score_a']} - {hm['score_b']} Team B")
 else:
-    st.info("No active match. Create one using the Sidebar Admin Panel.")
+    st.info("No active match. Create one in the Sidebar.")
