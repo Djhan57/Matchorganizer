@@ -7,6 +7,7 @@ st.set_page_config(page_title="Halı Saha Pro", page_icon="⚽", layout="centere
 
 # --- CONNEXION BASE DE DONNÉES ---
 import os
+
 # Tentative de récupération des clés dans les secrets
 try:
     # On essaie d'abord la méthode automatique
@@ -15,8 +16,7 @@ except:
     # Si ça échoue, on force avec les paramètres manuels
     url = st.secrets.get("SUPABASE_URL") or st.secrets["connections"]["supabase"]["url"]
     key = st.secrets.get("SUPABASE_KEY") or st.secrets["connections"]["supabase"]["key"]
-    conn = st.connection("supabase", type=SupabaseConnection, url=url, key=key)stop()
-
+    conn = st.connection("supabase", type=SupabaseConnection, url=url, key=key)
 # --- STYLE CSS (Terrain et Joueurs) ---
 st.markdown("""
     <style>
