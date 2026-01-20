@@ -7,15 +7,12 @@ from st_supabase_connection import SupabaseConnection
 st.set_page_config(page_title="Hali Saha Pro", page_icon="⚽", layout="centered")
 
 try:
-    # On essaie d'abord la méthode automatique
     conn = st.connection("supabase", type=SupabaseConnection)
 except:
-    # Si ça échoue, on force avec les paramètres manuels
-    url = st.secrets.get("SUPABASE_URL") or st.secrets["connections"]["supabase"]["url"]
-    key = st.secrets.get("SUPABASE_KEY") or st.secrets["connections"]["supabase"]["key"]
-    conn = st.connection("supabase", type=SupabaseConnection, url=url, key=key)
+    st.error("API Configuration missing. Check Streamlit Secrets.")
+    st.stop()
 
-# --- CSS STYLE ---
+# --- SMART UI & DARK MODE CSS ---
 st.markdown("""
     <style>
     :root { --card-bg: #ffffff; --card-text: #1e2d24; --pitch-line: white; }
@@ -45,25 +42,21 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- DIALOGS (Confirmation Box) ---
+# --- DIALOGS ---
 @st.dialog("Confirm Registration")
 def confirm_registration(name, phone, position, match_id, is_waiting):
     st.write(f"**Name:** {name}")
+    st.write(f"**Phone:** +{phone}")
     st.write(f"**Position:** {position}")
     if is_waiting:
-        st.warning("⚠️ Note: You will be placed on the **Waiting List**.")
+        st.warning("⚠️ The squad is full. You will join the **Waiting List**.")
     else:
         st.success("✅ You are joining the **Main Squad**.")
     
-    st.write("Do you want to confirm your registration?")
-    
-    if st.button("Yes, sign me up!", use_container_width=True):
+    if st.button("Confirm & Sign Up", use_container_width=True):
         conn.table("participants").insert({
-            "match_id": match_id, 
-            "nom_complet": name, 
-            "phone": phone, 
-            "poste": position, 
-            "statut": "Confirmed ✅"
+            "match_id": match_id, "nom_complet": name, 
+            "phone": phone, "poste": position, "statut": "Confirmed ✅"
         }).execute()
         st.rerun()
 
@@ -84,9 +77,9 @@ match, joueurs, history = get_data()
 with st.sidebar:
     st.header("🔐 Admin Panel")
     pw = st.text_input("Access Code", type="password")
-    is_admin = (pw == "VOTRE_MOT_DE_PASSE")
+    is_admin = (pw == "Ahsen6240ada?") # <--- Replace this
 
-# --- UI ---
+# --- MAIN UI ---
 st.title("⚽ Hali Saha Pro")
 
 if match:
@@ -111,33 +104,23 @@ if match:
     
     t1, t2, t3, t4 = st.tabs(["📋 Register", "🏟️ Pitch", "⚙️ Admin", "📜 History"])
 
-   with t1:
-    st.link_button("🗺️ Open Stadium Location", match['maps_url'], use_container_width=True)
-    with st.form("reg_input"):
-        n = st.text_input("Full Name")
-        
-        # We add the +32 prefix visually and as a default value
-        col_code, col_phone = st.columns([1, 4])
-        col_code.text_input("Country", value="+32", disabled=True)
-        ph_input = col_phone.text_input("Phone Number", placeholder="470123456")
-        
-        p = st.selectbox("Position", ["Goalkeeper", "Defender", "Midfielder", "Forward"])
-        submit = st.form_submit_button("Join Match", use_container_width=True)
-        
-        if submit:
-            if n and ph_input:
-                # CLEANING LOGIC:
-                # Remove any leading '0' or '+32' or '32' typed by user to avoid duplicates
-                clean_ph = ph_input.strip().lstrip('0').replace('+32', '').replace(' ', '')
-                if clean_ph.startswith('32'):
-                    clean_ph = clean_ph[2:]
-                
-                # Final format for DB: 32 followed by the number
-                final_phone = f"32{clean_ph}"
-                
-                confirm_registration(n, final_phone, p, match['id'], len(main_squad) >= limite_joueurs)
-            else:
-                st.error("Please fill in Name and Phone.")
+    with t1:
+        st.link_button("🗺️ Open Location", match['maps_url'], use_container_width=True)
+        with st.form("reg_form"):
+            n = st.text_input("Full Name")
+            col1, col2 = st.columns([1, 4])
+            col1.text_input("Country", "+32", disabled=True)
+            ph_raw = col2.text_input("Phone Number", placeholder="470123456")
+            p = st.selectbox("Position", ["Goalkeeper", "Defender", "Midfielder", "Forward"])
+            if st.form_submit_button("Join Match", use_container_width=True):
+                if n and ph_raw:
+                    # Belgian Sanitizer Logic
+                    clean_digits = "".join(filter(str.isdigit, ph_raw))
+                    if clean_digits.startswith("32"): clean_digits = clean_digits[2:]
+                    elif clean_digits.startswith("0"): clean_digits = clean_digits[1:]
+                    final_phone = f"32{clean_digits}"
+                    confirm_registration(n, final_phone, p, match['id'], len(main_squad) >= limite_joueurs)
+                else: st.error("Name and Phone are required.")
 
     with t2:
         pitch_html = '<div class="pitch-container">'
@@ -152,47 +135,56 @@ if match:
     with t3:
         if is_admin:
             st.subheader("🛠️ Edit Match")
-            with st.form("edit"):
+            with st.form("edit_match"):
                 u_l = st.text_input("Location", value=match['lieu'])
                 u_h = st.text_input("Start", value=match['heure'])
                 u_f = st.text_input("End", value=match['heure_fin'])
-                if st.form_submit_button("Update Info"):
+                if st.form_submit_button("Save Changes"):
                     conn.table("matches").update({"lieu": u_l, "heure": u_h, "heure_fin": u_f}).eq("id", match['id']).execute()
                     st.rerun()
-            
+
             st.divider()
-            st.subheader("📢 Reminders")
+            st.subheader("📢 WhatsApp Reminders")
             for j in main_squad:
                 if j.get('phone'):
-                    msg = f"⚽ Match today at {match['heure']}! See you there."
+                    msg = f"⚽ Match Reminder: Today at {match['heure']}! See you there."
                     wa_url = f"https://wa.me/{j['phone']}?text={msg.replace(' ', '%20')}"
                     st.markdown(f'<a href="{wa_url}" target="_blank" class="wa-btn">WhatsApp {j["nom_complet"]}</a>', unsafe_allow_html=True)
 
             st.divider()
-            with st.expander("🏁 Finish & Score"):
+            with st.expander("🏁 Archive & Record Score"):
                 with st.form("score"):
                     sa, sb = st.number_input("Team A", 0), st.number_input("Team B", 0)
-                    if st.form_submit_button("Archive Match"):
+                    if st.form_submit_button("Finish Match"):
                         conn.table("matches").update({"score_a": sa, "score_b": sb, "is_finished": True}).eq("id", match['id']).execute()
                         st.rerun()
 
             st.subheader("Manage Players")
             for j in joueurs:
                 c1, c2 = st.columns([3, 1])
-                c1.write(f"{j['nom_complet']}")
+                c1.write(j['nom_complet'])
                 if c2.button("❌", key=f"k_{j['id']}"):
                     conn.table("participants").delete().eq("id", j['id']).execute()
                     st.rerun()
-        else: st.info("Admin code required.")
+
+            st.divider()
+            st.subheader("⚠️ Danger Zone")
+            if st.checkbox("Confirm deletion of this match"):
+                if st.button("Delete Entire Match"):
+                    conn.table("participants").delete().eq("match_id", match['id']).execute()
+                    conn.table("matches").delete().eq("id", match['id']).execute()
+                    st.rerun()
+        else: st.info("Admin password required.")
 
     with t4:
-        for h_m in history:
-            st.write(f"📅 {h_m['date']} | Team A {h_m['score_a']} - {h_m['score_b']} Team B")
+        st.subheader("Recent Results")
+        for hm in history:
+            st.write(f"📅 {hm['date']} | Team A {hm['score_a']} - {hm['score_b']} Team B")
 else:
-    st.info("No active match.")
+    st.info("No active match. Create one in the sidebar.")
 
 if is_admin:
-    with st.sidebar.expander("🆕 New Match"):
+    with st.sidebar.expander("🆕 Create Match"):
         d = st.date_input("Date")
         h1, h2 = st.time_input("Start"), st.time_input("End")
         l, m = st.text_input("Stadium"), st.text_input("Maps Link")
