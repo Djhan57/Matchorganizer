@@ -111,18 +111,33 @@ if match:
     
     t1, t2, t3, t4 = st.tabs(["📋 Register", "🏟️ Pitch", "⚙️ Admin", "📜 History"])
 
-    with t1:
-        st.link_button("🗺️ Open Stadium Location", match['maps_url'], use_container_width=True)
-        with st.form("reg_input"):
-            n = st.text_input("Full Name")
-            ph = st.text_input("Phone (e.g. 33600112233)")
-            p = st.selectbox("Position", ["Goalkeeper", "Defender", "Midfielder", "Forward"])
-            submit = st.form_submit_button("Join Match", use_container_width=True)
-            if submit:
-                if n and ph:
-                    confirm_registration(n, ph, p, match['id'], len(main_squad) >= limite_joueurs)
-                else:
-                    st.error("Please fill in Name and Phone.")
+   with t1:
+    st.link_button("🗺️ Open Stadium Location", match['maps_url'], use_container_width=True)
+    with st.form("reg_input"):
+        n = st.text_input("Full Name")
+        
+        # We add the +32 prefix visually and as a default value
+        col_code, col_phone = st.columns([1, 4])
+        col_code.text_input("Country", value="+32", disabled=True)
+        ph_input = col_phone.text_input("Phone Number", placeholder="470123456")
+        
+        p = st.selectbox("Position", ["Goalkeeper", "Defender", "Midfielder", "Forward"])
+        submit = st.form_submit_button("Join Match", use_container_width=True)
+        
+        if submit:
+            if n and ph_input:
+                # CLEANING LOGIC:
+                # Remove any leading '0' or '+32' or '32' typed by user to avoid duplicates
+                clean_ph = ph_input.strip().lstrip('0').replace('+32', '').replace(' ', '')
+                if clean_ph.startswith('32'):
+                    clean_ph = clean_ph[2:]
+                
+                # Final format for DB: 32 followed by the number
+                final_phone = f"32{clean_ph}"
+                
+                confirm_registration(n, final_phone, p, match['id'], len(main_squad) >= limite_joueurs)
+            else:
+                st.error("Please fill in Name and Phone.")
 
     with t2:
         pitch_html = '<div class="pitch-container">'
@@ -150,7 +165,7 @@ if match:
             for j in main_squad:
                 if j.get('phone'):
                     msg = f"⚽ Match today at {match['heure']}! See you there."
-                    wa_url = f"https://wa.me/{j['phone'].replace('+', '').replace(' ', '')}?text={msg.replace(' ', '%20')}"
+                    wa_url = f"https://wa.me/{j['phone']}?text={msg.replace(' ', '%20')}"
                     st.markdown(f'<a href="{wa_url}" target="_blank" class="wa-btn">WhatsApp {j["nom_complet"]}</a>', unsafe_allow_html=True)
 
             st.divider()
