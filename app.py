@@ -1,4 +1,5 @@
 import streamlit as st
+import pandas as pd  # <--- Vérifiez que cette ligne est bien présente
 from st_supabase_connection import SupabaseConnection
 
 # 1. Connexion à la base de données réelle
