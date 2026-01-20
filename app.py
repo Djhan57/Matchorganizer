@@ -197,8 +197,18 @@ if match:
                 if any(p.get('team') for p in main_squad):
                     team_a = [p['nom_complet'] for p in main_squad if p.get('team') == 'A']
                     team_b = [p['nom_complet'] for p in main_squad if p.get('team') == 'B']
+                    
+                    # Formatting the message for WhatsApp
                     summary = f"⚽ *Teams:* \n\n*🔵 Team A:* {', '.join(team_a)}\n\n*🔴 Team B:* {', '.join(team_b)}"
-                    st.markdown(f'<a href="https://wa.me/?text={summary.replace(" ", "%20").replace("\\n", "%0A")}" target="_blank" class="wa-btn" style="background-color:#075E54; width:100%; text-align:center;">📲 Share Teams on Group</a>', unsafe_allow_html=True)
+                    encoded_msg = summary.replace(" ", "%20").replace("\n", "%0A")
+                    share_url = f"https://wa.me/?text={encoded_msg}"
+                    
+                    # The button rendering
+                    st.markdown(f'''
+                        <a href="{share_url}" target="_blank" class="wa-btn" style="background-color:#075E54; width:100%; text-align:center; display:block; text-decoration:none;">
+                            📲 Share Teams on WhatsApp Group
+                        </a>
+                    ''', unsafe_allow_html=True)
             
             st.divider()
             st.subheader("🚩 Archive & Danger Zone")
