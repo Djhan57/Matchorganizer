@@ -6,12 +6,16 @@ from st_supabase_connection import SupabaseConnection
 st.set_page_config(page_title="Halı Saha Pro", page_icon="⚽", layout="centered")
 
 # --- CONNEXION BASE DE DONNÉES ---
+tryimport os
+# Tentative de récupération des clés dans les secrets
 try:
-    # Tente de se connecter via les Secrets Streamlit
+    # On essaie d'abord la méthode automatique
     conn = st.connection("supabase", type=SupabaseConnection)
-except Exception as e:
-    st.error("⚠️ Erreur de connexion : Vérifiez vos Secrets Streamlit (URL et Key).")
-    st.stop()
+except:
+    # Si ça échoue, on force avec les paramètres manuels
+    url = st.secrets.get("SUPABASE_URL") or st.secrets["connections"]["supabase"]["url"]
+    key = st.secrets.get("SUPABASE_KEY") or st.secrets["connections"]["supabase"]["key"]
+    conn = st.connection("supabase", type=SupabaseConnection, url=url, key=key)stop()
 
 # --- STYLE CSS (Terrain et Joueurs) ---
 st.markdown("""
@@ -59,7 +63,7 @@ joueurs = get_participants(match['id']) if match else []
 # --- BARRE LATÉRALE (ADMIN) ---
 st.sidebar.title("🔐 Espace Organisateur")
 admin_key = st.sidebar.text_input("Code Admin", type="password")
-is_admin = (admin_key == "VOTRE_MOT_DE_PASSE") # <--- CHANGEZ VOTRE CODE ICI
+is_admin = (admin_key == "Ahsen6240ada?") # <--- CHANGEZ VOTRE CODE ICI
 
 # --- INTERFACE PRINCIPALE ---
 st.title("⚽ Halı Saha Pro")
