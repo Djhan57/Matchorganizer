@@ -1,17 +1,15 @@
 import streamlit as st
 import pandas as pd
+import random
 from datetime import datetime, timedelta
 from st_supabase_connection import SupabaseConnection
 
 # --- CONFIGURATION ---
 st.set_page_config(page_title="Hali Saha Pro", page_icon="⚽", layout="centered")
 
-# Tentative de récupération des clés dans les secrets
 try:
-    # On essaie d'abord la méthode automatique
     conn = st.connection("supabase", type=SupabaseConnection)
 except:
-    # Si ça échoue, on force avec les paramètres manuels
     url = st.secrets.get("SUPABASE_URL") or st.secrets["connections"]["supabase"]["url"]
     key = st.secrets.get("SUPABASE_KEY") or st.secrets["connections"]["supabase"]["key"]
     conn = st.connection("supabase", type=SupabaseConnection, url=url, key=key)
@@ -39,11 +37,10 @@ st.markdown("""
         border: 3px solid var(--pitch-line); height: 500px; width: 100%; position: relative; border-radius: 10px; margin-top: 20px; overflow: hidden;
     }
     .player-label {
-        background: white; color: black; padding: 4px 10px; border-radius: 12px; font-weight: bold; font-size: 11px;
-        position: absolute; transform: translate(-50%, -50%); box-shadow: 0 2px 4px rgba(0,0,0,0.3); border: 1px solid #2e7d32; white-space: nowrap; z-index: 100;
+        padding: 4px 10px; border-radius: 12px; font-weight: bold; font-size: 11px;
+        position: absolute; transform: translate(-50%, -50%); box-shadow: 0 2px 4px rgba(0,0,0,0.3); white-space: nowrap; z-index: 100;
     }
     .wa-btn { background-color: #25D366; color: white !important; padding: 10px 15px; border-radius: 8px; text-decoration: none; font-weight: bold; display: inline-block; margin-top: 10px; }
-    /* Add inside the <style> tag */
     .team-a { background: #3b82f6 !important; color: white !important; border: 2px solid white !important; }
     .team-b { background: #ef4444 !important; color: white !important; border: 2px solid white !important; }
     .no-team { background: white !important; color: black !important; border: 1px solid #2e7d32 !important; }
@@ -53,14 +50,9 @@ st.markdown("""
 # --- DIALOGS ---
 @st.dialog("Confirm Registration")
 def confirm_registration(name, phone, position, match_id, is_waiting):
-    st.write(f"**Name:** {name}")
-    st.write(f"**Phone:** +{phone}")
-    st.write(f"**Position:** {position}")
-    if is_waiting:
-        st.warning("⚠️ The squad is full. You will join the **Waiting List**.")
-    else:
-        st.success("✅ You are joining the **Main Squad**.")
-    
+    st.write(f"**Name:** {name} | **Phone:** +{phone}")
+    if is_waiting: st.warning("⚠️ You will join the **Waiting List**.")
+    else: st.success("✅ Joining the **Main Squad**.")
     if st.button("Confirm & Sign Up", use_container_width=True):
         conn.table("participants").insert({
             "match_id": match_id, "nom_complet": name, 
@@ -85,13 +77,12 @@ match, joueurs, history = get_data()
 with st.sidebar:
     st.header("🔐 Admin Panel")
     pw = st.text_input("Access Code", type="password")
-    is_admin = (pw == "VOTRE_MOT_DE_PASSE") # <--- Replace this
+    is_admin = (pw == "VOTRE_MOT_DE_PASSE")
 
 # --- MAIN UI ---
 st.title("⚽ Hali Saha Pro")
 
 if match:
-    # Squad Limits
     limite_joueurs = 10
     try:
         fmt = '%H:%M:%S' if len(match['heure']) > 5 else '%H:%M'
@@ -122,7 +113,6 @@ if match:
             p = st.selectbox("Position", ["Goalkeeper", "Defender", "Midfielder", "Forward"])
             if st.form_submit_button("Join Match", use_container_width=True):
                 if n and ph_raw:
-                    # Belgian Sanitizer Logic
                     clean_digits = "".join(filter(str.isdigit, ph_raw))
                     if clean_digits.startswith("32"): clean_digits = clean_digits[2:]
                     elif clean_digits.startswith("0"): clean_digits = clean_digits[1:]
@@ -131,16 +121,18 @@ if match:
                 else: st.error("Name and Phone are required.")
 
     with t2:
+        st.subheader("Tactical Lineup")
         pitch_html = '<div class="pitch-container">'
         y_map = {"Forward": 18, "Midfielder": 42, "Defender": 68, "Goalkeeper": 88}
         for pos_name, y_top in y_map.items():
             at_pos = [j for j in main_squad if j['poste'] == pos_name]
             for i, p in enumerate(at_pos):
                 x_left = (100 / (len(at_pos) + 1)) * (i + 1)
-                # Logic to pick the color based on the 'team' column in DB
-        t_val = p.get('team')
-        team_class = "team-a" if t_val == 'A' else "team-b" if t_val == 'B' else "no-team"
-        pitch_html += f'<div class="player-label {team_class}" style="top:{y_top}%; left:{x_left}%;">{p["nom_complet"]}</div>'
+                t_val = p.get('team')
+                team_class = "team-a" if t_val == 'A' else "team-b" if t_val == 'B' else "no-team"
+                pitch_html += f'<div class="player-label {team_class}" style="top:{y_top}%; left:{x_left}%;">{p["nom_complet"]}</div>'
+        pitch_html += '</div>'
+        st.markdown(pitch_html, unsafe_allow_html=True)
 
     with t3:
         if is_admin:
@@ -154,12 +146,33 @@ if match:
                     st.rerun()
 
             st.divider()
+            st.subheader("🔀 Team Management")
+            if len(main_squad) >= 10:
+                if st.button("Generate Random Teams"):
+                    players_to_shuffle = main_squad.copy()
+                    random.shuffle(players_to_shuffle)
+                    for i, p in enumerate(players_to_shuffle):
+                        assigned_team = 'A' if i % 2 == 0 else 'B'
+                        conn.table("participants").update({"team": assigned_team}).eq("id", p['id']).execute()
+                    st.success("Teams split! Check the Pitch tab.")
+                    st.rerun()
+                
+                if any(p.get('team') for p in main_squad):
+                    team_a = [p['nom_complet'] for p in main_squad if p.get('team') == 'A']
+                    team_b = [p['nom_complet'] for p in main_squad if p.get('team') == 'B']
+                    summary = f"⚽ *Teams:* \n\n*🔵 Team A:* {', '.join(team_a)}\n\n*🔴 Team B:* {', '.join(team_b)}"
+                    share_url = f"https://wa.me/?text={summary.replace(' ', '%20').replace('\\n', '%0A')}"
+                    st.markdown(f'<a href="{share_url}" target="_blank" class="wa-btn">📲 Share Teams on WhatsApp</a>', unsafe_allow_html=True)
+            else:
+                st.info("Wait for 10 players to generate teams.")
+
+            st.divider()
             st.subheader("📢 WhatsApp Reminders")
             for j in main_squad:
                 if j.get('phone'):
                     msg = f"⚽ Match Reminder: Today at {match['heure']}! See you there."
                     wa_url = f"https://wa.me/{j['phone']}?text={msg.replace(' ', '%20')}"
-                    st.markdown(f'<a href="{wa_url}" target="_blank" class="wa-btn">WhatsApp {j["nom_complet"]}</a>', unsafe_allow_html=True)
+                    st.markdown(f'<a href="{wa_url}" target="_blank" class="wa-btn">Ping {j["nom_complet"]}</a>', unsafe_allow_html=True)
 
             st.divider()
             with st.expander("🏁 Archive & Record Score"):
@@ -176,49 +189,14 @@ if match:
                 if c2.button("❌", key=f"k_{j['id']}"):
                     conn.table("participants").delete().eq("id", j['id']).execute()
                     st.rerun()
-
-            st.divider()
-            st.subheader("⚠️ Danger Zone")
-            if st.checkbox("Confirm deletion of this match"):
-                if st.button("Delete Entire Match"):
-                    conn.table("participants").delete().eq("match_id", match['id']).execute()
-                    conn.table("matches").delete().eq("id", match['id']).execute()
-                    st.rerun()
-        else: st.info("Admin password required.")
-            # Add this inside Tab 3 under 'if is_admin:'
-st.subheader("🔀 Team Management")
-
-if len(main_squad) >= 10:
-    if st.button("Generate Random Teams"):
-        import random
-        # Take the 10 players, shuffle them
-        players_to_shuffle = main_squad.copy()
-        random.shuffle(players_to_shuffle)
-        
-        # Assign A to half and B to half
-        for i, p in enumerate(players_to_shuffle):
-            assigned_team = 'A' if i % 2 == 0 else 'B'
-            conn.table("participants").update({"team": assigned_team}).eq("id", p['id']).execute()
-        
-        st.success("Teams split! Go to Pitch tab to see.")
-        st.rerun()
-
-    # Share Teams Button
-    if any(p.get('team') for p in main_squad):
-        team_a_names = [p['nom_complet'] for p in main_squad if p.get('team') == 'A']
-        team_b_names = [p['nom_complet'] for p in main_squad if p.get('team') == 'B']
-        
-        summary = f"⚽ *Match Teams:* \n\n*🔵 Team A:* {', '.join(team_a_names)}\n\n*🔴 Team B:* {', '.join(team_b_names)}"
-        share_url = f"https://wa.me/?text={summary.replace(' ', '%20').replace('\\n', '%0A')}"
-        
-        st.markdown(f'<a href="{share_url}" target="_blank" class="wa-btn">📲 Share Teams on WhatsApp Group</a>', unsafe_allow_html=True)
-else:
-    st.info("The team generator will be available once 10 players are registered.")
+        else:
+            st.info("Admin password required.")
 
     with t4:
         st.subheader("Recent Results")
         for hm in history:
             st.write(f"📅 {hm['date']} | Team A {hm['score_a']} - {hm['score_b']} Team B")
+
 else:
     st.info("No active match. Create one in the sidebar.")
 
