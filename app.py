@@ -44,6 +44,7 @@ st.markdown("""
     .team-a { background: #3b82f6 !important; color: white !important; border: 2px solid white !important; }
     .team-b { background: #ef4444 !important; color: white !important; border: 2px solid white !important; }
     .no-team { background: white !important; color: black !important; border: 1px solid #2e7d32 !important; }
+    .wa-btn { background-color: #25D366; color: white !important; padding: 6px 12px; border-radius: 6px; text-decoration: none; font-weight: bold; display: inline-block; font-size: 12px; margin: 2px 0; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -52,7 +53,7 @@ st.markdown("""
 def confirm_registration(name, phone, position, match_id, is_waiting):
     st.write(f"**Name:** {name} | **Phone:** +{phone}")
     if is_waiting: st.warning("⚠️ The squad is full. You will join the **Waiting List**.")
-    else: st.success("✅ You are joining the **Main Squad**.")
+    else: st.success("✅ Joining the **Main Squad**.")
     if st.button("Confirm & Sign Up", use_container_width=True):
         conn.table("participants").insert({
             "match_id": match_id, "nom_complet": name, 
@@ -73,11 +74,22 @@ def get_data():
 
 match, joueurs, history = get_data()
 
-# --- ADMIN AUTH ---
+# --- ADMIN AUTH & CREATION ---
 with st.sidebar:
     st.header("🔐 Admin Panel")
     pw = st.text_input("Access Code", type="password")
     is_admin = (pw == "VOTRE_MOT_DE_PASSE")
+    
+    if is_admin:
+        st.divider()
+        with st.expander("🆕 Create New Match", expanded=not match):
+            d = st.date_input("Match Date")
+            h = st.text_input("Start Time", "20:00")
+            l = st.text_input("Stadium Name")
+            m = st.text_input("Google Maps Link")
+            if st.button("Publish Match"):
+                conn.table("matches").insert({"date": str(d), "heure": h, "lieu": l, "maps_url": m, "is_finished": False}).execute()
+                st.rerun()
 
 # --- MAIN UI ---
 st.title("⚽ Hali Saha Pro")
@@ -141,7 +153,7 @@ if match:
 
     with t3:
         if is_admin:
-            st.subheader("⚙️ Match Settings")
+            st.subheader("⚙️ Match Management")
             with st.expander("📝 Edit Match Details"):
                 with st.form("edit_details"):
                     new_lieu = st.text_input("Stadium Name", value=match['lieu'])
@@ -152,7 +164,6 @@ if match:
                         st.rerun()
 
             st.divider()
-            st.subheader("👥 Player Management")
             with st.expander("❌ Remove Players"):
                 for j in joueurs:
                     c1, c2 = st.columns([4, 1])
@@ -160,6 +171,13 @@ if match:
                     if c2.button("Kick", key=f"kick_{j['id']}"):
                         conn.table("participants").delete().eq("id", j['id']).execute()
                         st.rerun()
+            
+            with st.expander("📢 Send WhatsApp Reminders"):
+                for j in main_squad:
+                    if j.get('phone'):
+                        msg = f"⚽ Match Reminder: Today at {match['heure']}! See you there."
+                        wa_url = f"https://wa.me/{j['phone']}?text={msg.replace(' ', '%20')}"
+                        st.markdown(f'<a href="{wa_url}" target="_blank" class="wa-btn">Ping {j["nom_complet"]}</a>', unsafe_allow_html=True)
 
             st.divider()
             st.subheader("🔀 Team Management")
@@ -175,7 +193,12 @@ if match:
                 if col_clear.button("🗑️ Clear Teams"):
                     conn.table("participants").update({"team": None}).eq("match_id", match['id']).execute()
                     st.rerun()
-            else: st.info("Need 10 players for team generation.")
+                
+                if any(p.get('team') for p in main_squad):
+                    team_a = [p['nom_complet'] for p in main_squad if p.get('team') == 'A']
+                    team_b = [p['nom_complet'] for p in main_squad if p.get('team') == 'B']
+                    summary = f"⚽ *Teams:* \n\n*🔵 Team A:* {', '.join(team_a)}\n\n*🔴 Team B:* {', '.join(team_b)}"
+                    st.markdown(f'<a href="https://wa.me/?text={summary.replace(" ", "%20").replace("\\n", "%0A")}" target="_blank" class="wa-btn" style="background-color:#075E54; width:100%; text-align:center;">📲 Share Teams on Group</a>', unsafe_allow_html=True)
             
             st.divider()
             st.subheader("🚩 Archive & Danger Zone")
@@ -191,18 +214,9 @@ if match:
                     conn.table("participants").delete().eq("match_id", match['id']).execute()
                     conn.table("matches").delete().eq("id", match['id']).execute()
                     st.rerun()
-        else: st.info("Admin code required.")
+        else: st.info("Enter admin code in sidebar.")
 
     with t4:
         for hm in history: st.write(f"📅 {hm['date']} | Team A {hm['score_a']} - {hm['score_b']} Team B")
 else:
-    st.info("No active match.")
-    if is_admin:
-        with st.sidebar.expander("🆕 Create Match"):
-            d = st.date_input("Date")
-            h = st.text_input("Time", "20:00")
-            l = st.text_input("Stadium")
-            m = st.text_input("Maps Link")
-            if st.button("Create"):
-                conn.table("matches").insert({"date": str(d), "heure": h, "lieu": l, "maps_url": m, "is_finished": False}).execute()
-                st.rerun()
+    st.info("No active match. Create one using the Sidebar Admin Panel.")
