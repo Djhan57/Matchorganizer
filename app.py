@@ -147,16 +147,20 @@ if match:
 
             st.divider()
             st.subheader("🔀 Team Management")
+            col_gen, col_clear = st.columns(2)
             if len(main_squad) >= 10:
-                if st.button("Generate Random Teams"):
+                if col_gen.button("Generate Teams"):
                     players_to_shuffle = main_squad.copy()
                     random.shuffle(players_to_shuffle)
                     for i, p in enumerate(players_to_shuffle):
                         assigned_team = 'A' if i % 2 == 0 else 'B'
                         conn.table("participants").update({"team": assigned_team}).eq("id", p['id']).execute()
-                    st.success("Teams split! Check the Pitch tab.")
                     st.rerun()
                 
+                if col_clear.button("Clear Teams"):
+                    conn.table("participants").update({"team": None}).eq("match_id", match['id']).execute()
+                    st.rerun()
+
                 if any(p.get('team') for p in main_squad):
                     team_a = [p['nom_complet'] for p in main_squad if p.get('team') == 'A']
                     team_b = [p['nom_complet'] for p in main_squad if p.get('team') == 'B']
@@ -188,6 +192,14 @@ if match:
                 c1.write(j['nom_complet'])
                 if c2.button("❌", key=f"k_{j['id']}"):
                     conn.table("participants").delete().eq("id", j['id']).execute()
+                    st.rerun()
+
+            st.divider()
+            st.subheader("⚠️ Danger Zone")
+            if st.checkbox("Enable Match Deletion"):
+                if st.button("Delete Entire Match Forever", type="primary"):
+                    conn.table("participants").delete().eq("match_id", match['id']).execute()
+                    conn.table("matches").delete().eq("id", match['id']).execute()
                     st.rerun()
         else:
             st.info("Admin password required.")
