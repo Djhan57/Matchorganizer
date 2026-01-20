@@ -15,24 +15,52 @@ except:
     key = st.secrets.get("SUPABASE_KEY") or st.secrets["connections"]["supabase"]["key"]
     conn = st.connection("supabase", type=SupabaseConnection, url=url, key=key)
 
-# --- CSS STYLE ---
+# --- SMART DARK MODE CSS ---
 st.markdown("""
     <style>
-    .stApp { background-color: #f8f9fa; }
-    .pitch-container {
-        background-color: #45a049;
-        background-image: 
-            linear-gradient(white 2px, transparent 2px),
-            linear-gradient(90deg, white 2px, transparent 2px),
-            radial-gradient(circle at center, transparent 0, transparent 40px, white 40px, white 42px, transparent 42px);
-        background-size: 100% 50%, 50% 100%, 100% 100%;
-        border: 3px solid white; height: 500px; width: 100%; position: relative; border-radius: 10px; margin-top: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); overflow: hidden;
+    /* Default Light Mode */
+    :root {
+        --card-bg: #ffffff;
+        --card-text: #1e2d24;
+        --pitch-line: white;
     }
+
+    /* Automatic Dark Mode Detection */
+    @media (prefers-color-scheme: dark) {
+        :root {
+            --card-bg: #1e1e1e;
+            --card-text: #ffffff;
+            --pitch-line: rgba(255,255,255,0.6);
+        }
+        .stApp { background-color: #0e1117; }
+    }
+
+    .match-card { 
+        background-color: var(--card-bg); 
+        color: var(--card-text);
+        padding: 20px; 
+        border-radius: 15px; 
+        border-left: 5px solid #2e7d32; 
+        box-shadow: 0 2px 8px rgba(0,0,0,0.2); 
+        margin-bottom: 15px;
+    }
+
+    .pitch-container {
+        background-color: #2d5a27;
+        background-image: 
+            linear-gradient(var(--pitch-line) 2px, transparent 2px),
+            linear-gradient(90deg, var(--pitch-line) 2px, transparent 2px),
+            radial-gradient(circle at center, transparent 0, transparent 40px, var(--pitch-line) 40px, var(--pitch-line) 42px, transparent 42px);
+        background-size: 100% 50%, 50% 100%, 100% 100%;
+        border: 3px solid var(--pitch-line); height: 500px; width: 100%; position: relative; border-radius: 10px; margin-top: 20px; overflow: hidden;
+    }
+
     .player-label {
-        background: white; color: #1e2d24; padding: 4px 10px; border-radius: 12px; font-weight: bold; font-size: 11px;
+        background: white; color: black; padding: 4px 10px; border-radius: 12px; font-weight: bold; font-size: 11px;
         position: absolute; transform: translate(-50%, -50%); box-shadow: 0 2px 4px rgba(0,0,0,0.3); border: 1px solid #2e7d32; white-space: nowrap; z-index: 100;
     }
-    .match-card { background: white; padding: 20px; border-radius: 15px; border-left: 5px solid #2e7d32; box-shadow: 0 2px 8px rgba(0,0,0,0.05); margin-bottom: 10px;}
+
+    .wa-btn { background-color: #25D366; color: white !important; padding: 10px 15px; border-radius: 8px; text-decoration: none; font-weight: bold; display: inline-block; margin-top: 10px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -71,42 +99,40 @@ with st.sidebar:
 st.title("⚽ Hali Saha Pro")
 
 if match:
-    # Reminder Logic Check (Visual Only for now)
+    # 4-Hour Warning Logic
     match_time_str = f"{match['date']} {match['heure']}"
     try:
-        match_dt = datetime.strptime(match_time_str, "%Y-%m-%d %H:%M:%S" if len(match['heure']) > 5 else "%Y-%m-%d %H:%M")
-        reminder_time = match_dt - timedelta(hours=4)
-        if datetime.now() >= reminder_time and datetime.now() < match_dt:
-            st.warning(f"🔔 Reminder: Match starts in less than 4 hours!")
+        fmt = "%Y-%m-%d %H:%M:%S" if len(match['heure']) > 5 else "%Y-%m-%d %H:%M"
+        match_dt = datetime.strptime(match_time_str, fmt)
+        if datetime.now() >= (match_dt - timedelta(hours=4)) and datetime.now() < match_dt:
+            st.warning("🔔 Match starts in less than 4 hours!")
     except: pass
 
     st.markdown(f"""
     <div class="match-card">
         <h3>📅 Next Match: {match['date']}</h3>
         <p>⏱️ <b>{match['heure']} — {match.get('heure_fin', 'N/A')}</b> | 📍 {match['lieu']}</p>
-        <p>👥 <b>{len(main_squad)} / {limite_joueurs} Players</b></p>
+        <p>👥 <b>{len(main_squad)} / {limite_joueurs} Players</b> (+{len(waiting_list)} waiting)</p>
     </div>
     """, unsafe_allow_html=True)
     
     t1, t2, t3, t4 = st.tabs(["📋 Register", "🏟️ Pitch", "⚙️ Admin", "📜 History"])
 
     with t1:
+        st.link_button("🗺️ Open Location", match['maps_url'], use_container_width=True)
         if len(main_squad) >= limite_joueurs:
-            st.warning("Squad is full. You will be added to the Waiting List.")
+            st.warning("Squad is FULL. You'll be on the WAITING LIST.")
         with st.form("reg"):
-            n = st.text_input("Full Name")
-            ph = st.text_input("Phone Number (e.g. +336...)")
+            n = st.text_input("Name")
+            ph = st.text_input("Phone (e.g., 33600000000)")
             p = st.selectbox("Position", ["Goalkeeper", "Defender", "Midfielder", "Forward"])
-            if st.form_submit_button("Join Squad"):
+            if st.form_submit_button("Join Match"):
                 if n and ph:
                     conn.table("participants").insert({"match_id": match['id'], "nom_complet": n, "phone": ph, "poste": p, "statut": "Confirmed ✅"}).execute()
-                    st.success("Registered successfully!")
                     st.rerun()
-                else:
-                    st.error("Name and Phone are required!")
 
     with t2:
-        st.subheader("Tactical Lineup")
+        st.subheader("Starting Lineup")
         pitch_html = '<div class="pitch-container">'
         y_map = {"Forward": 18, "Midfielder": 42, "Defender": 68, "Goalkeeper": 88}
         for pos_name, y_top in y_map.items():
@@ -118,43 +144,39 @@ if match:
 
     with t3:
         if is_admin:
-            st.subheader("Admin Tools")
-            
-            if st.button("📢 Send WhatsApp Reminders"):
-                for j in main_squad:
-                    if j.get('phone'):
-                        msg = f"Hi {j['nom_complet']}, reminder for our match at {match['heure']} today at {match['lieu']}!"
-                        whatsapp_url = f"https://wa.me/{j['phone']}?text={msg.replace(' ', '%20')}"
-                        st.write(f"Click to notify {j['nom_complet']}: [WhatsApp Link]({whatsapp_url})")
+            st.subheader("📢 WhatsApp Reminders")
+            for j in main_squad:
+                if j.get('phone'):
+                    msg = f"Hey {j['nom_complet']}! ⚽ Reminder for our match today at {match['heure']} at {match['lieu']}."
+                    wa_url = f"https://wa.me/{j['phone'].replace('+', '')}?text={msg.replace(' ', '%20')}"
+                    st.markdown(f'<a href="{wa_url}" target="_blank" class="wa-btn">Ping {j["nom_complet"]}</a>', unsafe_allow_html=True)
             
             st.divider()
-            with st.expander("🏁 End Match & Score"):
+            with st.expander("🏁 Finish Match & Save Score"):
                 with st.form("score"):
-                    s_a, s_b = st.number_input("Team A", 0), st.number_input("Team B", 0)
-                    if st.form_submit_button("Record Result"):
-                        conn.table("matches").update({"score_a": s_a, "score_b": s_b, "is_finished": True}).eq("id", match['id']).execute()
+                    sa, sb = st.number_input("Team A", 0), st.number_input("Team B", 0)
+                    if st.form_submit_button("Save Result"):
+                        conn.table("matches").update({"score_a": sa, "score_b": sb, "is_finished": True}).eq("id", match['id']).execute()
                         st.rerun()
 
-            st.subheader("Kick Players")
+            st.subheader("Manage Players")
             for j in joueurs:
                 c1, c2 = st.columns([3, 1])
                 c1.write(f"{j['nom_complet']} ({j.get('phone', 'No Phone')})")
                 if c2.button("❌", key=f"k_{j['id']}"):
                     conn.table("participants").delete().eq("id", j['id']).execute()
                     st.rerun()
-        else:
-            st.info("Enter admin code in sidebar.")
 
     with t4:
         st.subheader("Recent Results")
-        for h_match in history:
-            st.write(f"📅 {h_match['date']} | Team A {h_match['score_a']} - {h_match['score_b']} Team B")
+        for h_m in history:
+            st.write(f"📅 {h_m['date']} | Team A {h_m['score_a']} - {h_m['score_b']} Team B")
 
 if is_admin:
     with st.sidebar.expander("🆕 New Match"):
         d = st.date_input("Date")
         h1, h2 = st.time_input("Start"), st.time_input("End")
-        l, m = st.text_input("Stadium"), st.text_input("Maps Link")
+        loc, maps = st.text_input("Stadium"), st.text_input("Maps Link")
         if st.button("Publish"):
-            conn.table("matches").insert({"date": str(d), "heure": str(h1), "heure_fin": str(h2), "lieu": l, "maps_url": m, "is_finished": False}).execute()
+            conn.table("matches").insert({"date": str(d), "heure": str(h1), "heure_fin": str(h2), "lieu": loc, "maps_url": maps, "is_finished": False}).execute()
             st.rerun()
