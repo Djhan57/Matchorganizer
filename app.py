@@ -1,195 +1,157 @@
 import streamlit as st
 import pandas as pd
+from datetime import datetime
 from st_supabase_connection import SupabaseConnection
 
-# --- CONFIGURATION DE LA PAGE ---
-st.set_page_config(page_title="Halı Saha Pro", page_icon="⚽", layout="centered")
+# --- CONFIGURATION ---
+st.set_page_config(page_title="Hali Saha Pro", page_icon="⚽", layout="centered")
 
-# --- CONNEXION BASE DE DONNÉES ---
-import os
-
-# Tentative de récupération des clés dans les secrets
 try:
-    # On essaie d'abord la méthode automatique
     conn = st.connection("supabase", type=SupabaseConnection)
 except:
-    # Si ça échoue, on force avec les paramètres manuels
-    url = st.secrets.get("SUPABASE_URL") or st.secrets["connections"]["supabase"]["url"]
-    key = st.secrets.get("SUPABASE_KEY") or st.secrets["connections"]["supabase"]["key"]
-    conn = st.connection("supabase", type=SupabaseConnection, url=url, key=key)
-# --- STYLE CSS (Terrain et Joueurs) ---
+    st.error("API Configuration missing.")
+    st.stop()
+
+# --- CSS STYLE (Interface & Pitch) ---
 st.markdown("""
     <style>
-    .pitch {
-        background-color: #2e7d32;
-        border: 2px solid white;
-        height: 400px;
-        width: 100%;
-        position: relative;
-        border-radius: 15px;
-        background-image: linear-gradient(rgba(255,255,255,.1) 50%, transparent 50%);
-        background-size: 100% 40px;
-        margin-bottom: 20px;
+    .stApp { background-color: #f8f9fa; }
+    .pitch-container {
+        background-color: #45a049;
+        background-image: 
+            linear-gradient(white 2px, transparent 2px),
+            linear-gradient(90deg, white 2px, transparent 2px),
+            radial-gradient(circle at center, transparent 0, transparent 40px, white 40px, white 42px, transparent 42px);
+        background-size: 100% 50%, 50% 100%, 100% 100%;
+        border: 3px solid white;
+        height: 500px; width: 100%; position: relative; border-radius: 10px; margin: 20px 0; box-shadow: 0 4px 15px rgba(0,0,0,0.2);
     }
-    .player-card {
-        background: white;
-        color: black;
-        padding: 4px 12px;
-        border-radius: 20px;
-        font-weight: bold;
-        font-size: 0.85rem;
-        position: absolute;
-        transform: translateX(-50%);
-        box-shadow: 0px 4px 6px rgba(0,0,0,0.2);
-        border: 1px solid #ccc;
-        white-space: nowrap;
+    .player-label {
+        background: white; color: #1e2d24; padding: 4px 12px; border-radius: 15px; font-weight: bold; font-size: 11px;
+        position: absolute; transform: translate(-50%, -50%); box-shadow: 0 2px 4px rgba(0,0,0,0.3); border: 1px solid #2e7d32; white-space: nowrap; z-index: 10;
     }
+    .match-card { background: white; padding: 20px; border-radius: 15px; border-left: 5px solid #2e7d32; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+    .full-msg { background-color: #ff4b4b; color: white; padding: 10px; border-radius: 10px; text-align: center; font-weight: bold; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- FONCTIONS RÉCUPÉRATION DONNÉES ---
-def get_latest_match():
-    res = conn.table("matches").select("*").order("id", desc=True).limit(1).execute()
-    return res.data[0] if res.data else None
+# --- DATA LOGIC ---
+def get_data():
+    m = conn.table("matches").select("*").order("id", desc=True).limit(1).execute()
+    match_data = m.data[0] if m.data else None
+    joueurs_data = []
+    if match_data:
+        p = conn.table("participants").select("*").eq("match_id", match_data['id']).execute()
+        joueurs_data = p.data if p.data else []
+    return match_data, joueurs_data
 
-def get_participants(match_id):
-    res = conn.table("participants").select("*").eq("match_id", match_id).execute()
-    return res.data if res.data else []
+match, joueurs = get_data()
 
-# Initialisation des données
-match = get_latest_match()
-joueurs = get_participants(match['id']) if match else []
+# --- LIMIT CALCULATION ---
+limite_joueurs = 10 
+duration_str = "Unknown duration"
 
-# --- BARRE LATÉRALE (ADMIN) ---
-st.sidebar.title("🔐 Espace Organisateur")
-admin_key = st.sidebar.text_input("Code Admin", type="password")
-is_admin = (admin_key == "Ahsen6240ada?") # <--- CHANGEZ VOTRE CODE ICI
+if match and match.get('heure_fin') and match.get('heure'):
+    try:
+        fmt = '%H:%M:%S' if len(match['heure']) > 5 else '%H:%M'
+        start_time = datetime.strptime(match['heure'], fmt)
+        end_time = datetime.strptime(match['heure_fin'], fmt)
+        delta = (end_time - start_time).total_seconds() / 3600
+        if delta > 1:
+            limite_joueurs = 12
+        duration_str = f"{int(delta)}h" if delta.is_integer() else f"{delta}h"
+    except:
+        pass
 
-# --- INTERFACE PRINCIPALE ---
-st.title("⚽ Halı Saha Pro")
+presents = [j for j in joueurs if "✅" in j['statut']]
+nb_presents = len(presents)
+slots_left = limite_joueurs - nb_presents
 
-if not match:
-    st.warning("Aucun match n'est programmé pour le moment.")
-    if not is_admin:
-        st.stop()
-else:
-    # Tabs pour une navigation fluide sur mobile
-    tab_match, tab_terrain, tab_admin = st.tabs(["📅 Match", "🏟️ Terrain", "🏗️ Admin"])
+# --- ADMIN SIDEBAR ---
+with st.sidebar:
+    st.header("🔐 Admin Space")
+    pw = st.text_input("Admin Code", type="password")
+    is_admin = (pw == "VOTRE_MOT_DE_PASSE")
 
-    # --- ONGLET 1 : INFOS ET INSCRIPTION ---
-    with tab_match:
-        st.header(f"Match du {match['date']}")
-        col1, col2 = st.columns(2)
-        col1.metric("⏰ Heure", match['heure'])
-        col1.metric("📍 Lieu", match['lieu'])
+# --- MAIN INTERFACE ---
+st.title("⚽ Hali Saha Pro")
+
+if match:
+    st.markdown(f"""
+    <div class="match-card">
+        <h3>📅 Match on {match['date']}</h3>
+        <p>⏱️ <b>{match['heure']} — {match.get('heure_fin', 'N/A')}</b> ({duration_str})</p>
+        <p>📍 {match['lieu']} | 👥 <b>{nb_presents} / {limite_joueurs} players</b></p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    t1, t2, t3 = st.tabs(["📋 Registration", "🏟️ Pitch", "⚙️ Manage"])
+
+    with t1:
+        st.link_button("🗺️ Open in Google Maps", match['maps_url'], use_container_width=True)
         
-        with col2:
-            st.write("Retrouvez le stade ici :")
-            st.link_button("🗺️ Google Maps", match['maps_url'], use_container_width=True)
+        if slots_left <= 0:
+            st.markdown('<div class="full-msg">🚫 FULL CAPACITY! Registration is closed.</div>', unsafe_allow_html=True)
+        else:
+            st.success(f"{slots_left} slots remaining!")
+            with st.form("register_form"):
+                n = st.text_input("First & Last Name")
+                p = st.selectbox("Position", ["Goalkeeper", "Defender", "Midfielder", "Forward"])
+                if st.form_submit_button("Confirm Registration"):
+                    if n:
+                        # Logic maps French to English for DB consistency if needed, 
+                        # but here we keep it simple with the selected label.
+                        conn.table("participants").insert({
+                            "match_id": match['id'], 
+                            "nom_complet": n, 
+                            "poste": p, 
+                            "statut": "I'm coming ✅"
+                        }).execute()
+                        st.rerun()
+                    else:
+                        st.error("Name is required")
 
-        st.divider()
+    with t2:
+        st.subheader(f"Tactical Lineup ({nb_presents})")
+        st.markdown('<div class="pitch-container">', unsafe_allow_html=True)
         
-        st.subheader("📝 S'inscrire")
-        with st.form("inscription_form"):
-            nom = st.text_input("Prénom & Nom")
-            poste = st.selectbox("Poste", ["Gardien", "Défenseur", "Milieu", "Attaquant"])
-            statut = st.radio("Présence", ["Je viens ✅", "Absent ❌"], horizontal=True)
-            
-            if st.form_submit_button("Valider l'inscription", use_container_width=True):
-                if nom:
-                    new_player = {
-                        "match_id": match['id'],
-                        "nom_complet": nom,
-                        "poste": poste,
-                        "statut": statut
-                    }
-                    conn.table("participants").insert(new_player).execute()
-                    st.success(f"Salut {nom}, c'est enregistré !")
-                    st.rerun()
-                else:
-                    st.error("Veuillez entrer votre nom.")
+        y_coords = {"Forwards": 15, "Midfielders": 40, "Defenders": 65, "Goalkeeper": 88}
+        mapping = {"Forward": "Forwards", "Midfielder": "Midfielders", "Defender": "Defenders", "Goalkeeper": "Goalkeeper"}
 
-    # --- ONGLET 2 : VISUALISATION DU TERRAIN ---
-    with tab_terrain:
-        presents = [j for j in joueurs if "✅" in j['statut']]
-        st.subheader(f"Composition ({len(presents)} joueurs)")
-        
-        st.markdown('<div class="pitch">', unsafe_allow_html=True)
-        
-        coords = {
-            "Gardien": {"top": "85%", "left": "50%"},
-            "Défenseur": {"top": "65%", "left": "50%"},
-            "Milieu": {"top": "40%", "left": "50%"},
-            "Attaquant": {"top": "15%", "left": "50%"}
-        }
-
-        # Dictionnaire pour gérer les décalages si plusieurs joueurs au même poste
-        offsets = {"Gardien": 0, "Défenseur": 0, "Milieu": 0, "Attaquant": 0}
-
-        for j in presents:
-            pos = coords.get(j['poste'], {"top": "50%", "left": "50%"})
-            current_offset = offsets[j['poste']]
-            left_val = f"calc({pos['left']} + {current_offset}px)"
-            
-            st.markdown(f'''
-                <div class="player-card" style="top: {pos['top']}; left: {left_val};">
-                    {j['nom_complet']}
-                </div>
-            ''', unsafe_allow_html=True)
-            
-            # Alterne le décalage pour ne pas superposer les noms
-            offsets[j['poste']] = (current_offset + 60) if current_offset <= 0 else (current_offset * -1)
+        for poste_db, poste_label in mapping.items():
+            in_pos = [p for p in presents if p['poste'] == poste_db]
+            for i, p in enumerate(in_pos):
+                left = (100 / (len(in_pos) + 1)) * (i + 1)
+                top = y_coords[poste_label]
+                st.markdown(f'<div class="player-label" style="top:{top}%; left:{left}%;">{p["nom_complet"]}</div>', unsafe_allow_html=True)
 
         st.markdown('</div>', unsafe_allow_html=True)
-        
-        # Liste textuelle en dessous pour plus de clarté
-        if presents:
-            with st.expander("Voir la liste complète"):
-                for p in presents:
-                    st.write(f"• {p['nom_complet']} ({p['poste']})")
 
-    # --- ONGLET 3 : ADMINISTRATION ---
-    with tab_admin:
+    with t3:
         if is_admin:
-            st.subheader("🛠️ Gestion du Match")
-            
-            # Modification des infos
-            with st.form("edit_match"):
-                u_date = st.text_input("Date", value=match['date'])
-                u_heure = st.text_input("Heure", value=match['heure'])
-                u_lieu = st.text_input("Lieu", value=match['lieu'])
-                u_maps = st.text_input("Lien Maps", value=match['maps_url'])
-                if st.form_submit_button("Mettre à jour les infos"):
-                    conn.table("matches").update({"date": u_date, "heure": u_heure, "lieu": u_lieu, "maps_url": u_maps}).eq("id", match['id']).execute()
-                    st.success("Modifications enregistrées !")
+            st.subheader("Remove Players")
+            for j in joueurs:
+                c1, c2 = st.columns([3, 1])
+                c1.write(f"{j['nom_complet']}")
+                if c2.button("Delete", key=f"d_{j['id']}"):
+                    conn.table("participants").delete().eq("id", j['id']).execute()
                     st.rerun()
-            
-            st.divider()
-            
-            # Suppression des joueurs
-            st.subheader("👤 Liste des inscrits (Modération)")
-            if joueurs:
-                for j in joueurs:
-                    c1, c2 = st.columns([3, 1])
-                    c1.write(f"**{j['nom_complet']}** ({j['statut']})")
-                    if c2.button("❌", key=f"del_{j['id']}"):
-                        conn.table("participants").delete().eq("id", j['id']).execute()
-                        st.rerun()
-            else:
-                st.info("Aucun inscrit.")
         else:
-            st.info("Veuillez entrer le code admin dans le menu à gauche.")
+            st.info("Enter admin code in the sidebar to access management.")
 
-# --- CRÉATION NOUVEAU MATCH (Toujours dispo pour l'admin) ---
 if is_admin:
-    with st.sidebar.expander("➕ Créer un nouveau match"):
-        new_date = st.date_input("Date")
-        new_time = st.time_input("Heure")
-        new_place = st.text_input("Stade")
-        new_link = st.text_input("Lien Google Maps")
-        if st.button("Lancer ce match"):
+    with st.sidebar.expander("➕ Create New Match"):
+        d = st.date_input("Date")
+        h_d = st.time_input("Start Time")
+        h_f = st.time_input("End Time")
+        l = st.text_input("Stadium/Location")
+        m = st.text_input("Maps Link")
+        if st.button("Publish Match"):
             conn.table("matches").insert({
-                "date": str(new_date), "heure": str(new_time), 
-                "lieu": new_place, "maps_url": new_link
+                "date": str(d), 
+                "heure": str(h_d), 
+                "heure_fin": str(h_f), 
+                "lieu": l, 
+                "maps_url": m
             }).execute()
             st.rerun()
