@@ -15,17 +15,15 @@ except:
     key = st.secrets.get("SUPABASE_KEY") or st.secrets["connections"]["supabase"]["key"]
     conn = st.connection("supabase", type=SupabaseConnection, url=url, key=key)
 
-# --- SMART DARK MODE CSS ---
+# --- SMART DARK MODE & UI CSS ---
 st.markdown("""
     <style>
-    /* Default Light Mode */
     :root {
         --card-bg: #ffffff;
         --card-text: #1e2d24;
         --pitch-line: white;
     }
 
-    /* Automatic Dark Mode Detection */
     @media (prefers-color-scheme: dark) {
         :root {
             --card-bg: #1e1e1e;
@@ -38,11 +36,8 @@ st.markdown("""
     .match-card { 
         background-color: var(--card-bg); 
         color: var(--card-text);
-        padding: 20px; 
-        border-radius: 15px; 
-        border-left: 5px solid #2e7d32; 
-        box-shadow: 0 2px 8px rgba(0,0,0,0.2); 
-        margin-bottom: 15px;
+        padding: 20px; border-radius: 15px; border-left: 5px solid #2e7d32; 
+        box-shadow: 0 2px 8px rgba(0,0,0,0.2); margin-bottom: 15px;
     }
 
     .pitch-container {
@@ -66,9 +61,13 @@ st.markdown("""
 
 # --- DATA FETCHING ---
 def get_data():
+    # Active Match (Not finished)
     m = conn.table("matches").select("*").eq("is_finished", False).order("id", desc=True).limit(1).execute()
     match_data = m.data[0] if m.data else None
+    
+    # History
     h = conn.table("matches").select("*").eq("is_finished", True).order("date", desc=True).limit(5).execute()
+    
     joueurs_data = []
     if match_data:
         p = conn.table("participants").select("*").eq("match_id", match_data['id']).order("created_at").execute()
@@ -77,36 +76,26 @@ def get_data():
 
 match, joueurs, history = get_data()
 
-# --- LIMIT LOGIC ---
-limite_joueurs = 10
-if match and match.get('heure_fin') and match.get('heure'):
+# --- ADMIN AUTH ---
+with st.sidebar:
+    st.header("🔐 Admin Panel")
+    pw = st.text_input("Access Code", type="password")
+    is_admin = (pw == "VOTRE_MOT_DE_PASSE") # UPDATE THIS
+
+# --- UI LOGIC ---
+st.title("⚽ Hali Saha Pro")
+
+if match:
+    # Squad Limits
+    limite_joueurs = 10
     try:
         fmt = '%H:%M:%S' if len(match['heure']) > 5 else '%H:%M'
         delta = (datetime.strptime(match['heure_fin'], fmt) - datetime.strptime(match['heure'], fmt)).total_seconds() / 3600
         limite_joueurs = 12 if delta > 1 else 10
     except: pass
-
-main_squad = joueurs[:limite_joueurs]
-waiting_list = joueurs[limite_joueurs:]
-
-# --- ADMIN AUTH ---
-with st.sidebar:
-    st.header("🔐 Admin Panel")
-    pw = st.text_input("Access Code", type="password")
-    is_admin = (pw == "VOTRE_MOT_DE_PASSE")
-
-# --- MAIN UI ---
-st.title("⚽ Hali Saha Pro")
-
-if match:
-    # 4-Hour Warning Logic
-    match_time_str = f"{match['date']} {match['heure']}"
-    try:
-        fmt = "%Y-%m-%d %H:%M:%S" if len(match['heure']) > 5 else "%Y-%m-%d %H:%M"
-        match_dt = datetime.strptime(match_time_str, fmt)
-        if datetime.now() >= (match_dt - timedelta(hours=4)) and datetime.now() < match_dt:
-            st.warning("🔔 Match starts in less than 4 hours!")
-    except: pass
+    
+    main_squad = joueurs[:limite_joueurs]
+    waiting_list = joueurs[limite_joueurs:]
 
     st.markdown(f"""
     <div class="match-card">
@@ -119,12 +108,12 @@ if match:
     t1, t2, t3, t4 = st.tabs(["📋 Register", "🏟️ Pitch", "⚙️ Admin", "📜 History"])
 
     with t1:
-        st.link_button("🗺️ Open Location", match['maps_url'], use_container_width=True)
+        st.link_button("🗺️ Open Stadium Location", match['maps_url'], use_container_width=True)
         if len(main_squad) >= limite_joueurs:
-            st.warning("Squad is FULL. You'll be on the WAITING LIST.")
+            st.warning("You are joining the WAITING LIST.")
         with st.form("reg"):
-            n = st.text_input("Name")
-            ph = st.text_input("Phone (e.g., 33600000000)")
+            n = st.text_input("Full Name")
+            ph = st.text_input("Phone (e.g. 33600000000)")
             p = st.selectbox("Position", ["Goalkeeper", "Defender", "Midfielder", "Forward"])
             if st.form_submit_button("Join Match"):
                 if n and ph:
@@ -132,7 +121,6 @@ if match:
                     st.rerun()
 
     with t2:
-        st.subheader("Starting Lineup")
         pitch_html = '<div class="pitch-container">'
         y_map = {"Forward": 18, "Midfielder": 42, "Defender": 68, "Goalkeeper": 88}
         for pos_name, y_top in y_map.items():
@@ -144,36 +132,54 @@ if match:
 
     with t3:
         if is_admin:
-            st.subheader("📢 WhatsApp Reminders")
+            # THIS IS THE PART THAT WAS DISAPPEARING
+            st.subheader("🛠️ Edit Match Info")
+            with st.form("edit_active"):
+                u_l = st.text_input("Location", value=match['lieu'])
+                u_d = st.text_input("Date", value=str(match['date']))
+                u_h = st.text_input("Start Time", value=match['heure'])
+                u_f = st.text_input("End Time", value=match['heure_fin'])
+                u_m = st.text_input("Maps URL", value=match['maps_url'])
+                if st.form_submit_button("Update Current Match"):
+                    conn.table("matches").update({"lieu": u_l, "date": u_d, "heure": u_h, "heure_fin": u_f, "maps_url": u_m}).eq("id", match['id']).execute()
+                    st.success("Updated!")
+                    st.rerun()
+
+            st.divider()
+            st.subheader("📢 Reminders")
             for j in main_squad:
                 if j.get('phone'):
-                    msg = f"Hey {j['nom_complet']}! ⚽ Reminder for our match today at {match['heure']} at {match['lieu']}."
+                    msg = f"⚽ Match Reminder: {match['heure']} at {match['lieu']}!"
                     wa_url = f"https://wa.me/{j['phone'].replace('+', '')}?text={msg.replace(' ', '%20')}"
                     st.markdown(f'<a href="{wa_url}" target="_blank" class="wa-btn">Ping {j["nom_complet"]}</a>', unsafe_allow_html=True)
-            
+
             st.divider()
-            with st.expander("🏁 Finish Match & Save Score"):
+            with st.expander("🏁 End Match & Save Score"):
                 with st.form("score"):
                     sa, sb = st.number_input("Team A", 0), st.number_input("Team B", 0)
-                    if st.form_submit_button("Save Result"):
+                    if st.form_submit_button("Record Result"):
                         conn.table("matches").update({"score_a": sa, "score_b": sb, "is_finished": True}).eq("id", match['id']).execute()
                         st.rerun()
 
-            st.subheader("Manage Players")
+            st.subheader("Manage Squad")
             for j in joueurs:
                 c1, c2 = st.columns([3, 1])
-                c1.write(f"{j['nom_complet']} ({j.get('phone', 'No Phone')})")
+                c1.write(f"{j['nom_complet']}")
                 if c2.button("❌", key=f"k_{j['id']}"):
                     conn.table("participants").delete().eq("id", j['id']).execute()
                     st.rerun()
+        else: st.info("Enter Admin Code in sidebar.")
 
     with t4:
         st.subheader("Recent Results")
         for h_m in history:
             st.write(f"📅 {h_m['date']} | Team A {h_m['score_a']} - {h_m['score_b']} Team B")
+else:
+    st.info("No active match. Create one in the sidebar!")
 
+# --- ALWAYS SHOW NEW MATCH OPTION TO ADMIN ---
 if is_admin:
-    with st.sidebar.expander("🆕 New Match"):
+    with st.sidebar.expander("🆕 Create New Match"):
         d = st.date_input("Date")
         h1, h2 = st.time_input("Start"), st.time_input("End")
         loc, maps = st.text_input("Stadium"), st.text_input("Maps Link")
