@@ -1,14 +1,11 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
 from st_supabase_connection import SupabaseConnection
 
 # --- CONFIGURATION ---
 st.set_page_config(page_title="Hali Saha Pro", page_icon="⚽", layout="centered")
 
-import os
-
-# Tentative de récupération des clés dans les secrets
 try:
     # On essaie d'abord la méthode automatique
     conn = st.connection("supabase", type=SupabaseConnection)
@@ -36,29 +33,23 @@ st.markdown("""
         position: absolute; transform: translate(-50%, -50%); box-shadow: 0 2px 4px rgba(0,0,0,0.3); border: 1px solid #2e7d32; white-space: nowrap; z-index: 100;
     }
     .match-card { background: white; padding: 20px; border-radius: 15px; border-left: 5px solid #2e7d32; box-shadow: 0 2px 8px rgba(0,0,0,0.05); margin-bottom: 10px;}
-    .history-card { background: #f1f3f4; padding: 10px; border-radius: 10px; margin-bottom: 5px; font-size: 14px; }
     </style>
     """, unsafe_allow_html=True)
 
 # --- DATA FETCHING ---
 def get_data():
-    # Active Match
     m = conn.table("matches").select("*").eq("is_finished", False).order("id", desc=True).limit(1).execute()
     match_data = m.data[0] if m.data else None
-    
-    # Finished Matches (History)
     h = conn.table("matches").select("*").eq("is_finished", True).order("date", desc=True).limit(5).execute()
-    
     joueurs_data = []
     if match_data:
         p = conn.table("participants").select("*").eq("match_id", match_data['id']).order("created_at").execute()
         joueurs_data = p.data if p.data else []
-    
     return match_data, joueurs_data, h.data
 
 match, joueurs, history = get_data()
 
-# --- DURATION & LIMIT LOGIC ---
+# --- LIMIT LOGIC ---
 limite_joueurs = 10
 if match and match.get('heure_fin') and match.get('heure'):
     try:
@@ -80,30 +71,42 @@ with st.sidebar:
 st.title("⚽ Hali Saha Pro")
 
 if match:
+    # Reminder Logic Check (Visual Only for now)
+    match_time_str = f"{match['date']} {match['heure']}"
+    try:
+        match_dt = datetime.strptime(match_time_str, "%Y-%m-%d %H:%M:%S" if len(match['heure']) > 5 else "%Y-%m-%d %H:%M")
+        reminder_time = match_dt - timedelta(hours=4)
+        if datetime.now() >= reminder_time and datetime.now() < match_dt:
+            st.warning(f"🔔 Reminder: Match starts in less than 4 hours!")
+    except: pass
+
     st.markdown(f"""
     <div class="match-card">
         <h3>📅 Next Match: {match['date']}</h3>
         <p>⏱️ <b>{match['heure']} — {match.get('heure_fin', 'N/A')}</b> | 📍 {match['lieu']}</p>
-        <p>👥 <b>{len(main_squad)} / {limite_joueurs} Players</b> (+{len(waiting_list)} waiting)</p>
+        <p>👥 <b>{len(main_squad)} / {limite_joueurs} Players</b></p>
     </div>
     """, unsafe_allow_html=True)
     
     t1, t2, t3, t4 = st.tabs(["📋 Register", "🏟️ Pitch", "⚙️ Admin", "📜 History"])
 
     with t1:
-        st.link_button("🗺️ Location", match['maps_url'], use_container_width=True)
         if len(main_squad) >= limite_joueurs:
-            st.warning("Squad is full. You will be added to the WAITING LIST.")
+            st.warning("Squad is full. You will be added to the Waiting List.")
         with st.form("reg"):
-            n = st.text_input("Name")
+            n = st.text_input("Full Name")
+            ph = st.text_input("Phone Number (e.g. +336...)")
             p = st.selectbox("Position", ["Goalkeeper", "Defender", "Midfielder", "Forward"])
             if st.form_submit_button("Join Squad"):
-                if n:
-                    conn.table("participants").insert({"match_id": match['id'], "nom_complet": n, "poste": p, "statut": "Confirmed ✅"}).execute()
+                if n and ph:
+                    conn.table("participants").insert({"match_id": match['id'], "nom_complet": n, "phone": ph, "poste": p, "statut": "Confirmed ✅"}).execute()
+                    st.success("Registered successfully!")
                     st.rerun()
+                else:
+                    st.error("Name and Phone are required!")
 
     with t2:
-        st.subheader("Starting Lineup")
+        st.subheader("Tactical Lineup")
         pitch_html = '<div class="pitch-container">'
         y_map = {"Forward": 18, "Midfielder": 42, "Defender": 68, "Goalkeeper": 88}
         for pos_name, y_top in y_map.items():
@@ -115,26 +118,27 @@ if match:
 
     with t3:
         if is_admin:
-            with st.expander("📝 Update Match Details"):
-                with st.form("edit"):
-                    u_l = st.text_input("Location", value=match['lieu'])
-                    u_h = st.text_input("Time", value=match['heure'])
-                    if st.form_submit_button("Save"):
-                        conn.table("matches").update({"lieu": u_l, "heure": u_h}).eq("id", match['id']).execute()
-                        st.rerun()
+            st.subheader("Admin Tools")
             
-            with st.expander("🏁 End Match & Record Score"):
+            if st.button("📢 Send WhatsApp Reminders"):
+                for j in main_squad:
+                    if j.get('phone'):
+                        msg = f"Hi {j['nom_complet']}, reminder for our match at {match['heure']} today at {match['lieu']}!"
+                        whatsapp_url = f"https://wa.me/{j['phone']}?text={msg.replace(' ', '%20')}"
+                        st.write(f"Click to notify {j['nom_complet']}: [WhatsApp Link]({whatsapp_url})")
+            
+            st.divider()
+            with st.expander("🏁 End Match & Score"):
                 with st.form("score"):
-                    s_a = st.number_input("Team A", step=1)
-                    s_b = st.number_input("Team B", step=1)
-                    if st.form_submit_button("Finish Match"):
+                    s_a, s_b = st.number_input("Team A", 0), st.number_input("Team B", 0)
+                    if st.form_submit_button("Record Result"):
                         conn.table("matches").update({"score_a": s_a, "score_b": s_b, "is_finished": True}).eq("id", match['id']).execute()
                         st.rerun()
 
             st.subheader("Kick Players")
             for j in joueurs:
                 c1, c2 = st.columns([3, 1])
-                c1.write(j['nom_complet'])
+                c1.write(f"{j['nom_complet']} ({j.get('phone', 'No Phone')})")
                 if c2.button("❌", key=f"k_{j['id']}"):
                     conn.table("participants").delete().eq("id", j['id']).execute()
                     st.rerun()
@@ -144,19 +148,13 @@ if match:
     with t4:
         st.subheader("Recent Results")
         for h_match in history:
-            st.markdown(f"""
-            <div class="history-card">
-                <b>{h_match['date']}</b>: Team A {h_match['score_a']} - {h_match['score_b']} Team B
-            </div>
-            """, unsafe_allow_html=True)
+            st.write(f"📅 {h_match['date']} | Team A {h_match['score_a']} - {h_match['score_b']} Team B")
 
 if is_admin:
     with st.sidebar.expander("🆕 New Match"):
         d = st.date_input("Date")
-        h1 = st.time_input("Start")
-        h2 = st.time_input("End")
-        l = st.text_input("Stadium")
-        m = st.text_input("Maps Link")
+        h1, h2 = st.time_input("Start"), st.time_input("End")
+        l, m = st.text_input("Stadium"), st.text_input("Maps Link")
         if st.button("Publish"):
             conn.table("matches").insert({"date": str(d), "heure": str(h1), "heure_fin": str(h2), "lieu": l, "maps_url": m, "is_finished": False}).execute()
             st.rerun()
