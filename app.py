@@ -44,7 +44,6 @@ st.markdown("""
     .team-a { background: #3b82f6 !important; color: white !important; border: 2px solid white !important; }
     .team-b { background: #ef4444 !important; color: white !important; border: 2px solid white !important; }
     .no-team { background: white !important; color: black !important; border: 1px solid #2e7d32 !important; }
-    .wa-btn { background-color: #25D366; color: white !important; padding: 10px 15px; border-radius: 8px; text-decoration: none; font-weight: bold; display: inline-block; margin-top: 10px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -115,17 +114,11 @@ if match:
 
     with t2:
         st.subheader("Automated 1-2-2 Lineup")
-        pitch_html = '<div class="pitch-container">'
         
-        # Fixed 1-2-2 Coordinates (Y: height, X: horizontal within half)
+        pitch_html = '<div class="pitch-container">'
         formation_coords = [
-            {"y": 88, "x": 50},  # Goalkeeper
-            {"y": 65, "x": 25},  # Left Defender
-            {"y": 65, "x": 75},  # Right Defender
-            {"y": 25, "x": 25},  # Left Forward
-            {"y": 25, "x": 75}   # Right Forward
+            {"y": 88, "x": 50}, {"y": 65, "x": 25}, {"y": 65, "x": 75}, {"y": 25, "x": 25}, {"y": 25, "x": 75}
         ]
-
         team_a_p = [p for p in main_squad if p.get('team') == 'A']
         team_b_p = [p for p in main_squad if p.get('team') == 'B']
         others = [p for p in main_squad if p.get('team') not in ['A', 'B']]
@@ -134,26 +127,41 @@ if match:
             h = ""
             for i, p in enumerate(p_list[:5]):
                 coords = formation_coords[i]
-                if side == "left":
-                    x = (coords['x'] / 100) * 50
-                    t_cl = "team-a"
-                else:
-                    x = 50 + (coords['x'] / 100) * 50
-                    t_cl = "team-b"
+                x = (coords['x'] / 100) * 50 if side == "left" else 50 + (coords['x'] / 100) * 50
+                t_cl = "team-a" if side == "left" else "team-b"
                 h += f'<div class="player-label {t_cl}" style="top:{coords["y"]}%; left:{x}%;">{p["nom_complet"]}</div>'
             return h
 
         pitch_html += draw_team(team_a_p, "left")
         pitch_html += draw_team(team_b_p, "right")
-        
         for i, p in enumerate(others):
             y_pos = 10 + (i * 8)
             pitch_html += f'<div class="player-label no-team" style="top:{y_pos}%; left:50%;">{p["nom_complet"]}</div>'
-        
         st.markdown(pitch_html + '</div>', unsafe_allow_html=True)
 
     with t3:
         if is_admin:
+            st.subheader("⚙️ Match Settings")
+            with st.expander("📝 Edit Match Details"):
+                with st.form("edit_details"):
+                    new_lieu = st.text_input("Stadium Name", value=match['lieu'])
+                    new_heure = st.text_input("Match Time", value=match['heure'])
+                    new_maps = st.text_input("Maps Link", value=match['maps_url'])
+                    if st.form_submit_button("Update Info"):
+                        conn.table("matches").update({"lieu": new_lieu, "heure": new_heure, "maps_url": new_maps}).eq("id", match['id']).execute()
+                        st.rerun()
+
+            st.divider()
+            st.subheader("👥 Player Management")
+            with st.expander("❌ Remove Players"):
+                for j in joueurs:
+                    c1, c2 = st.columns([4, 1])
+                    c1.write(f"{j['nom_complet']} ({j['statut']})")
+                    if c2.button("Kick", key=f"kick_{j['id']}"):
+                        conn.table("participants").delete().eq("id", j['id']).execute()
+                        st.rerun()
+
+            st.divider()
             st.subheader("🔀 Team Management")
             col_gen, col_clear = st.columns(2)
             if len(main_squad) >= 10:
@@ -167,15 +175,10 @@ if match:
                 if col_clear.button("🗑️ Clear Teams"):
                     conn.table("participants").update({"team": None}).eq("match_id", match['id']).execute()
                     st.rerun()
-
-                if any(p.get('team') for p in main_squad):
-                    team_a = [p['nom_complet'] for p in main_squad if p.get('team') == 'A']
-                    team_b = [p['nom_complet'] for p in main_squad if p.get('team') == 'B']
-                    summary = f"⚽ *Teams:* \n\n*🔵 Team A:* {', '.join(team_a)}\n\n*🔴 Team B:* {', '.join(team_b)}"
-                    st.write(f"[📲 Share on WhatsApp](https://wa.me/?text={summary.replace(' ', '%20').replace('\\n', '%0A')})")
-
+            else: st.info("Need 10 players for team generation.")
+            
             st.divider()
-            st.subheader("🛠️ Match Control")
+            st.subheader("🚩 Archive & Danger Zone")
             with st.expander("🏁 Archive Match"):
                 with st.form("score"):
                     sa, sb = st.number_input("Team A", 0), st.number_input("Team B", 0)
@@ -183,7 +186,6 @@ if match:
                         conn.table("matches").update({"score_a": sa, "score_b": sb, "is_finished": True}).eq("id", match['id']).execute()
                         st.rerun()
 
-            st.subheader("⚠️ Danger Zone")
             if st.checkbox("Enable Deletion"):
                 if st.button("Delete Entire Match", type="primary"):
                     conn.table("participants").delete().eq("match_id", match['id']).execute()
@@ -198,7 +200,9 @@ else:
     if is_admin:
         with st.sidebar.expander("🆕 Create Match"):
             d = st.date_input("Date")
-            l, m = st.text_input("Stadium"), st.text_input("Maps Link")
+            h = st.text_input("Time", "20:00")
+            l = st.text_input("Stadium")
+            m = st.text_input("Maps Link")
             if st.button("Create"):
-                conn.table("matches").insert({"date": str(d), "heure": "20:00", "lieu": l, "maps_url": m, "is_finished": False}).execute()
+                conn.table("matches").insert({"date": str(d), "heure": h, "lieu": l, "maps_url": m, "is_finished": False}).execute()
                 st.rerun()
