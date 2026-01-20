@@ -5,7 +5,7 @@ from datetime import datetime
 from st_supabase_connection import SupabaseConnection
 
 # --- CONFIGURATION ---
-st.set_page_config(page_title="Hali Saha Pro", page_icon="⚽", layout="centered")
+st.set_page_config(page_title="Match Organizer", page_icon="⚽", layout="centered")
 
 try:
     conn = st.connection("supabase", type=SupabaseConnection)
