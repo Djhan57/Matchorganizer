@@ -14,7 +14,7 @@ except:
     key = st.secrets.get("SUPABASE_KEY") or st.secrets["connections"]["supabase"]["key"]
     conn = st.connection("supabase", type=SupabaseConnection, url=url, key=key)
 
-# --- CSS STYLE (With Split Pitch Middle Line) ---
+# --- CSS STYLE ---
 st.markdown("""
     <style>
     :root { --card-bg: #ffffff; --card-text: #1e2d24; --pitch-line: white; }
@@ -32,7 +32,7 @@ st.markdown("""
         background-image: 
             linear-gradient(var(--pitch-line) 2px, transparent 2px),
             linear-gradient(90deg, var(--pitch-line) 2px, transparent 2px),
-            linear-gradient(90deg, transparent 49.5%, var(--pitch-line) 50%, transparent 50.5%), /* Middle Line */
+            linear-gradient(90deg, transparent 49.5%, var(--pitch-line) 50%, transparent 50.5%),
             radial-gradient(circle at center, transparent 0, transparent 40px, var(--pitch-line) 40px, var(--pitch-line) 42px, transparent 42px);
         background-size: 100% 50%, 50% 100%, 100% 100%, 100% 100%;
         border: 3px solid var(--pitch-line); height: 500px; width: 100%; position: relative; border-radius: 10px; margin-top: 20px; overflow: hidden;
@@ -52,8 +52,8 @@ st.markdown("""
 @st.dialog("Confirm Registration")
 def confirm_registration(name, phone, position, match_id, is_waiting):
     st.write(f"**Name:** {name} | **Phone:** +{phone}")
-    if is_waiting: st.warning("⚠️ You will join the **Waiting List**.")
-    else: st.success("✅ Joining the **Main Squad**.")
+    if is_waiting: st.warning("⚠️ The squad is full. You will join the **Waiting List**.")
+    else: st.success("✅ You are joining the **Main Squad**.")
     if st.button("Confirm & Sign Up", use_container_width=True):
         conn.table("participants").insert({
             "match_id": match_id, "nom_complet": name, 
@@ -85,24 +85,18 @@ st.title("⚽ Hali Saha Pro")
 
 if match:
     limite_joueurs = 10
-    try:
-        fmt = '%H:%M:%S' if len(match['heure']) > 5 else '%H:%M'
-        delta = (datetime.strptime(match['heure_fin'], fmt) - datetime.strptime(match['heure'], fmt)).total_seconds() / 3600
-        limite_joueurs = 12 if delta > 1 else 10
-    except: pass
-    
     main_squad = joueurs[:limite_joueurs]
     waiting_list = joueurs[limite_joueurs:]
 
     st.markdown(f"""
     <div class="match-card">
         <h3>📅 Match: {match['date']}</h3>
-        <p>⏱️ <b>{match['heure']} — {match.get('heure_fin', 'N/A')}</b> | 📍 {match['lieu']}</p>
+        <p>⏱️ <b>{match['heure']}</b> | 📍 {match['lieu']}</p>
         <p>👥 <b>{len(main_squad)} / {limite_joueurs} Players</b> (+{len(waiting_list)} waiting)</p>
     </div>
     """, unsafe_allow_html=True)
     
-    t1, t2, t3, t4 = st.tabs(["📋 Register", "🏟️ Pitch", "⚙️ Admin", "📜 History"])
+    t1, t2, t3, t4 = st.tabs(["📋 Register", "🏟️ Pitch (1-2-2)", "⚙️ Admin", "📜 History"])
 
     with t1:
         st.link_button("🗺️ Open Location", match['maps_url'], use_container_width=True)
@@ -111,46 +105,59 @@ if match:
             col1, col2 = st.columns([1, 4])
             col1.text_input("Country", "+32", disabled=True)
             ph_raw = col2.text_input("Phone Number", placeholder="470123456")
-            p = st.selectbox("Position", ["Goalkeeper", "Defender", "Midfielder", "Forward"])
+            p = st.selectbox("Position (Visual only)", ["Goalkeeper", "Defender", "Midfielder", "Forward"])
             if st.form_submit_button("Join Match", use_container_width=True):
                 if n and ph_raw:
-                    clean_digits = "".join(filter(str.isdigit, ph_raw)).lstrip('0')
-                    if clean_digits.startswith("32"): clean_digits = clean_digits[2:]
-                    final_phone = f"32{clean_digits}"
-                    confirm_registration(n, final_phone, p, match['id'], len(main_squad) >= limite_joueurs)
+                    clean = "".join(filter(str.isdigit, ph_raw)).lstrip('0')
+                    if clean.startswith("32"): clean = clean[2:]
+                    confirm_registration(n, f"32{clean}", p, match['id'], len(main_squad) >= limite_joueurs)
                 else: st.error("Fields missing.")
 
     with t2:
-        st.subheader("Tactical Lineup")
+        st.subheader("Automated 1-2-2 Lineup")
         pitch_html = '<div class="pitch-container">'
-        y_map = {"Forward": 18, "Midfielder": 42, "Defender": 68, "Goalkeeper": 88}
         
+        # Fixed 1-2-2 Coordinates (Y: height, X: horizontal within half)
+        formation_coords = [
+            {"y": 88, "x": 50},  # Goalkeeper
+            {"y": 65, "x": 25},  # Left Defender
+            {"y": 65, "x": 75},  # Right Defender
+            {"y": 25, "x": 25},  # Left Forward
+            {"y": 25, "x": 75}   # Right Forward
+        ]
+
         team_a_p = [p for p in main_squad if p.get('team') == 'A']
         team_b_p = [p for p in main_squad if p.get('team') == 'B']
         others = [p for p in main_squad if p.get('team') not in ['A', 'B']]
 
-        def add_p(p_list, side):
+        def draw_team(p_list, side):
             h = ""
-            for pos_name, y_top in y_map.items():
-                at_pos = [j for j in p_list if j['poste'] == pos_name]
-                for i, p in enumerate(at_pos):
-                    if side == "left": x = (50 / (len(at_pos) + 1)) * (i + 1); t_cl = "team-a"
-                    elif side == "right": x = 50 + (50 / (len(at_pos) + 1)) * (i + 1); t_cl = "team-b"
-                    else: x = 50; t_cl = "no-team"
-                    h += f'<div class="player-label {t_cl}" style="top:{y_top}%; left:{x}%;">{p["nom_complet"]}</div>'
+            for i, p in enumerate(p_list[:5]):
+                coords = formation_coords[i]
+                if side == "left":
+                    x = (coords['x'] / 100) * 50
+                    t_cl = "team-a"
+                else:
+                    x = 50 + (coords['x'] / 100) * 50
+                    t_cl = "team-b"
+                h += f'<div class="player-label {t_cl}" style="top:{coords["y"]}%; left:{x}%;">{p["nom_complet"]}</div>'
             return h
 
-        pitch_html += add_p(team_a_p, "left")
-        pitch_html += add_p(team_b_p, "right")
-        pitch_html += add_p(others, "center")
+        pitch_html += draw_team(team_a_p, "left")
+        pitch_html += draw_team(team_b_p, "right")
+        
+        for i, p in enumerate(others):
+            y_pos = 10 + (i * 8)
+            pitch_html += f'<div class="player-label no-team" style="top:{y_pos}%; left:50%;">{p["nom_complet"]}</div>'
+        
         st.markdown(pitch_html + '</div>', unsafe_allow_html=True)
 
     with t3:
         if is_admin:
-            st.subheader("🛠️ Admin Tools")
+            st.subheader("🔀 Team Management")
             col_gen, col_clear = st.columns(2)
             if len(main_squad) >= 10:
-                if col_gen.button("🔀 Generate Teams"):
+                if col_gen.button("🔀 Generate Random Teams"):
                     shuffled = main_squad.copy()
                     random.shuffle(shuffled)
                     for i, p in enumerate(shuffled):
@@ -161,31 +168,37 @@ if match:
                     conn.table("participants").update({"team": None}).eq("match_id", match['id']).execute()
                     st.rerun()
 
+                if any(p.get('team') for p in main_squad):
+                    team_a = [p['nom_complet'] for p in main_squad if p.get('team') == 'A']
+                    team_b = [p['nom_complet'] for p in main_squad if p.get('team') == 'B']
+                    summary = f"⚽ *Teams:* \n\n*🔵 Team A:* {', '.join(team_a)}\n\n*🔴 Team B:* {', '.join(team_b)}"
+                    st.write(f"[📲 Share on WhatsApp](https://wa.me/?text={summary.replace(' ', '%20').replace('\\n', '%0A')})")
+
             st.divider()
+            st.subheader("🛠️ Match Control")
             with st.expander("🏁 Archive Match"):
                 with st.form("score"):
                     sa, sb = st.number_input("Team A", 0), st.number_input("Team B", 0)
-                    if st.form_submit_button("Save & Close"):
+                    if st.form_submit_button("Save & Archive"):
                         conn.table("matches").update({"score_a": sa, "score_b": sb, "is_finished": True}).eq("id", match['id']).execute()
                         st.rerun()
 
             st.subheader("⚠️ Danger Zone")
-            if st.checkbox("Confirm Deletion"):
-                if st.button("Delete Match Entirely", type="primary"):
+            if st.checkbox("Enable Deletion"):
+                if st.button("Delete Entire Match", type="primary"):
                     conn.table("participants").delete().eq("match_id", match['id']).execute()
                     conn.table("matches").delete().eq("id", match['id']).execute()
                     st.rerun()
-        else: st.info("Password needed.")
+        else: st.info("Admin code required.")
 
     with t4:
-        for hm in history: st.write(f"📅 {hm['date']} | A {hm['score_a']} - {hm['score_b']} B")
+        for hm in history: st.write(f"📅 {hm['date']} | Team A {hm['score_a']} - {hm['score_b']} Team B")
 else:
     st.info("No active match.")
-
-if is_admin:
-    with st.sidebar.expander("🆕 New Match"):
-        d = st.date_input("Date")
-        l, m = st.text_input("Stadium"), st.text_input("Maps Link")
-        if st.button("Create"):
-            conn.table("matches").insert({"date": str(d), "heure": "20:00", "lieu": l, "maps_url": m, "is_finished": False}).execute()
-            st.rerun()
+    if is_admin:
+        with st.sidebar.expander("🆕 Create Match"):
+            d = st.date_input("Date")
+            l, m = st.text_input("Stadium"), st.text_input("Maps Link")
+            if st.button("Create"):
+                conn.table("matches").insert({"date": str(d), "heure": "20:00", "lieu": l, "maps_url": m, "is_finished": False}).execute()
+                st.rerun()
