@@ -15,31 +15,19 @@ except:
     key = st.secrets.get("SUPABASE_KEY") or st.secrets["connections"]["supabase"]["key"]
     conn = st.connection("supabase", type=SupabaseConnection, url=url, key=key)
 
-# --- SMART DARK MODE & UI CSS ---
+# --- CSS STYLE ---
 st.markdown("""
     <style>
-    :root {
-        --card-bg: #ffffff;
-        --card-text: #1e2d24;
-        --pitch-line: white;
-    }
-
+    :root { --card-bg: #ffffff; --card-text: #1e2d24; --pitch-line: white; }
     @media (prefers-color-scheme: dark) {
-        :root {
-            --card-bg: #1e1e1e;
-            --card-text: #ffffff;
-            --pitch-line: rgba(255,255,255,0.6);
-        }
+        :root { --card-bg: #1e1e1e; --card-text: #ffffff; --pitch-line: rgba(255,255,255,0.6); }
         .stApp { background-color: #0e1117; }
     }
-
     .match-card { 
-        background-color: var(--card-bg); 
-        color: var(--card-text);
+        background-color: var(--card-bg); color: var(--card-text);
         padding: 20px; border-radius: 15px; border-left: 5px solid #2e7d32; 
         box-shadow: 0 2px 8px rgba(0,0,0,0.2); margin-bottom: 15px;
     }
-
     .pitch-container {
         background-color: #2d5a27;
         background-image: 
@@ -49,25 +37,41 @@ st.markdown("""
         background-size: 100% 50%, 50% 100%, 100% 100%;
         border: 3px solid var(--pitch-line); height: 500px; width: 100%; position: relative; border-radius: 10px; margin-top: 20px; overflow: hidden;
     }
-
     .player-label {
         background: white; color: black; padding: 4px 10px; border-radius: 12px; font-weight: bold; font-size: 11px;
         position: absolute; transform: translate(-50%, -50%); box-shadow: 0 2px 4px rgba(0,0,0,0.3); border: 1px solid #2e7d32; white-space: nowrap; z-index: 100;
     }
-
     .wa-btn { background-color: #25D366; color: white !important; padding: 10px 15px; border-radius: 8px; text-decoration: none; font-weight: bold; display: inline-block; margin-top: 10px; }
     </style>
     """, unsafe_allow_html=True)
 
+# --- DIALOGS (Confirmation Box) ---
+@st.dialog("Confirm Registration")
+def confirm_registration(name, phone, position, match_id, is_waiting):
+    st.write(f"**Name:** {name}")
+    st.write(f"**Position:** {position}")
+    if is_waiting:
+        st.warning("⚠️ Note: You will be placed on the **Waiting List**.")
+    else:
+        st.success("✅ You are joining the **Main Squad**.")
+    
+    st.write("Do you want to confirm your registration?")
+    
+    if st.button("Yes, sign me up!", use_container_width=True):
+        conn.table("participants").insert({
+            "match_id": match_id, 
+            "nom_complet": name, 
+            "phone": phone, 
+            "poste": position, 
+            "statut": "Confirmed ✅"
+        }).execute()
+        st.rerun()
+
 # --- DATA FETCHING ---
 def get_data():
-    # Active Match (Not finished)
     m = conn.table("matches").select("*").eq("is_finished", False).order("id", desc=True).limit(1).execute()
     match_data = m.data[0] if m.data else None
-    
-    # History
     h = conn.table("matches").select("*").eq("is_finished", True).order("date", desc=True).limit(5).execute()
-    
     joueurs_data = []
     if match_data:
         p = conn.table("participants").select("*").eq("match_id", match_data['id']).order("created_at").execute()
@@ -80,9 +84,9 @@ match, joueurs, history = get_data()
 with st.sidebar:
     st.header("🔐 Admin Panel")
     pw = st.text_input("Access Code", type="password")
-    is_admin = (pw == "VOTRE_MOT_DE_PASSE") # UPDATE THIS
+    is_admin = (pw == "VOTRE_MOT_DE_PASSE")
 
-# --- UI LOGIC ---
+# --- UI ---
 st.title("⚽ Hali Saha Pro")
 
 if match:
@@ -109,16 +113,16 @@ if match:
 
     with t1:
         st.link_button("🗺️ Open Stadium Location", match['maps_url'], use_container_width=True)
-        if len(main_squad) >= limite_joueurs:
-            st.warning("You are joining the WAITING LIST.")
-        with st.form("reg"):
+        with st.form("reg_input"):
             n = st.text_input("Full Name")
-            ph = st.text_input("Phone (e.g. 33600000000)")
+            ph = st.text_input("Phone (e.g. 33600112233)")
             p = st.selectbox("Position", ["Goalkeeper", "Defender", "Midfielder", "Forward"])
-            if st.form_submit_button("Join Match"):
+            submit = st.form_submit_button("Join Match", use_container_width=True)
+            if submit:
                 if n and ph:
-                    conn.table("participants").insert({"match_id": match['id'], "nom_complet": n, "phone": ph, "poste": p, "statut": "Confirmed ✅"}).execute()
-                    st.rerun()
+                    confirm_registration(n, ph, p, match['id'], len(main_squad) >= limite_joueurs)
+                else:
+                    st.error("Please fill in Name and Phone.")
 
     with t2:
         pitch_html = '<div class="pitch-container">'
@@ -132,57 +136,51 @@ if match:
 
     with t3:
         if is_admin:
-            # THIS IS THE PART THAT WAS DISAPPEARING
-            st.subheader("🛠️ Edit Match Info")
-            with st.form("edit_active"):
+            st.subheader("🛠️ Edit Match")
+            with st.form("edit"):
                 u_l = st.text_input("Location", value=match['lieu'])
-                u_d = st.text_input("Date", value=str(match['date']))
-                u_h = st.text_input("Start Time", value=match['heure'])
-                u_f = st.text_input("End Time", value=match['heure_fin'])
-                u_m = st.text_input("Maps URL", value=match['maps_url'])
-                if st.form_submit_button("Update Current Match"):
-                    conn.table("matches").update({"lieu": u_l, "date": u_d, "heure": u_h, "heure_fin": u_f, "maps_url": u_m}).eq("id", match['id']).execute()
-                    st.success("Updated!")
+                u_h = st.text_input("Start", value=match['heure'])
+                u_f = st.text_input("End", value=match['heure_fin'])
+                if st.form_submit_button("Update Info"):
+                    conn.table("matches").update({"lieu": u_l, "heure": u_h, "heure_fin": u_f}).eq("id", match['id']).execute()
                     st.rerun()
-
+            
             st.divider()
             st.subheader("📢 Reminders")
             for j in main_squad:
                 if j.get('phone'):
-                    msg = f"⚽ Match Reminder: {match['heure']} at {match['lieu']}!"
-                    wa_url = f"https://wa.me/{j['phone'].replace('+', '')}?text={msg.replace(' ', '%20')}"
-                    st.markdown(f'<a href="{wa_url}" target="_blank" class="wa-btn">Ping {j["nom_complet"]}</a>', unsafe_allow_html=True)
+                    msg = f"⚽ Match today at {match['heure']}! See you there."
+                    wa_url = f"https://wa.me/{j['phone'].replace('+', '').replace(' ', '')}?text={msg.replace(' ', '%20')}"
+                    st.markdown(f'<a href="{wa_url}" target="_blank" class="wa-btn">WhatsApp {j["nom_complet"]}</a>', unsafe_allow_html=True)
 
             st.divider()
-            with st.expander("🏁 End Match & Save Score"):
+            with st.expander("🏁 Finish & Score"):
                 with st.form("score"):
                     sa, sb = st.number_input("Team A", 0), st.number_input("Team B", 0)
-                    if st.form_submit_button("Record Result"):
+                    if st.form_submit_button("Archive Match"):
                         conn.table("matches").update({"score_a": sa, "score_b": sb, "is_finished": True}).eq("id", match['id']).execute()
                         st.rerun()
 
-            st.subheader("Manage Squad")
+            st.subheader("Manage Players")
             for j in joueurs:
                 c1, c2 = st.columns([3, 1])
                 c1.write(f"{j['nom_complet']}")
                 if c2.button("❌", key=f"k_{j['id']}"):
                     conn.table("participants").delete().eq("id", j['id']).execute()
                     st.rerun()
-        else: st.info("Enter Admin Code in sidebar.")
+        else: st.info("Admin code required.")
 
     with t4:
-        st.subheader("Recent Results")
         for h_m in history:
             st.write(f"📅 {h_m['date']} | Team A {h_m['score_a']} - {h_m['score_b']} Team B")
 else:
-    st.info("No active match. Create one in the sidebar!")
+    st.info("No active match.")
 
-# --- ALWAYS SHOW NEW MATCH OPTION TO ADMIN ---
 if is_admin:
-    with st.sidebar.expander("🆕 Create New Match"):
+    with st.sidebar.expander("🆕 New Match"):
         d = st.date_input("Date")
         h1, h2 = st.time_input("Start"), st.time_input("End")
-        loc, maps = st.text_input("Stadium"), st.text_input("Maps Link")
+        l, m = st.text_input("Stadium"), st.text_input("Maps Link")
         if st.button("Publish"):
-            conn.table("matches").insert({"date": str(d), "heure": str(h1), "heure_fin": str(h2), "lieu": loc, "maps_url": maps, "is_finished": False}).execute()
+            conn.table("matches").insert({"date": str(d), "heure": str(h1), "heure_fin": str(h2), "lieu": l, "maps_url": m, "is_finished": False}).execute()
             st.rerun()
