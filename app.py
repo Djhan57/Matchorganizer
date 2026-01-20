@@ -4,7 +4,17 @@ from st_supabase_connection import SupabaseConnection
 
 # 1. Connexion à la base de données réelle
 # Ces clés doivent être mises dans vos "Secrets" sur Streamlit Cloud
-conn = st.connection("supabase", type=SupabaseConnection)
+import os
+
+# Tentative de récupération des clés dans les secrets
+try:
+    # On essaie d'abord la méthode automatique
+    conn = st.connection("supabase", type=SupabaseConnection)
+except:
+    # Si ça échoue, on force avec les paramètres manuels
+    url = st.secrets.get("SUPABASE_URL") or st.secrets["connections"]["supabase"]["url"]
+    key = st.secrets.get("SUPABASE_KEY") or st.secrets["connections"]["supabase"]["key"]
+    conn = st.connection("supabase", type=SupabaseConnection, url=url, key=key)
 
 st.title("⚽ Halı Saha Pro")
 
