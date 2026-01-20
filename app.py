@@ -6,7 +6,7 @@ from st_supabase_connection import SupabaseConnection
 st.set_page_config(page_title="Halı Saha Pro", page_icon="⚽", layout="centered")
 
 # --- CONNEXION BASE DE DONNÉES ---
-tryimport os
+import os
 # Tentative de récupération des clés dans les secrets
 try:
     # On essaie d'abord la méthode automatique
