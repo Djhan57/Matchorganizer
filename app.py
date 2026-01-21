@@ -5,7 +5,7 @@ from datetime import datetime
 from st_supabase_connection import SupabaseConnection
 
 # --- CONFIGURATION ---
-st.set_page_config(page_title="Match Organizer", page_icon="⚽", layout="centered")
+st.set_page_config(page_title="Hali Saha Pro", page_icon="⚽", layout="centered")
 
 try:
     conn = st.connection("supabase", type=SupabaseConnection)
@@ -78,7 +78,7 @@ match, joueurs, history = get_data()
 with st.sidebar:
     st.header("🔐 Admin Panel")
     pw = st.text_input("Access Code", type="password")
-    is_admin = (pw == "FOOT!")
+    is_admin = (pw == "VOTRE_MOT_DE_PASSE")
     
     if is_admin:
         st.divider()
@@ -97,7 +97,7 @@ with st.sidebar:
                 st.rerun()
 
 # --- MAIN UI ---
-st.title("⚽ Match Pro")
+st.title("⚽ Hali Saha Pro")
 
 if match:
     limite_joueurs = 10
@@ -131,7 +131,6 @@ if match:
 
     with t2:
         st.subheader("Automated 1-2-2 Lineup")
-        
         pitch_html = '<div class="pitch-container">'
         formation_coords = [{"y": 88, "x": 50}, {"y": 65, "x": 25}, {"y": 65, "x": 75}, {"y": 25, "x": 25}, {"y": 25, "x": 75}]
         
@@ -157,6 +156,28 @@ if match:
     with t3:
         if is_admin:
             st.subheader("⚙️ Match Management")
+            
+            with st.expander("📥 Bulk Import from WhatsApp"):
+                st.info("Paste the poll names below (one name per line).")
+                bulk_input = st.text_area("Player List", height=150, placeholder="1. Ahmet\n2. Mehmet\n3. Can...")
+                if st.button("Import Players", use_container_width=True):
+                    lines = bulk_input.split('\n')
+                    import_count = 0
+                    for line in lines:
+                        name = line.strip()
+                        if name:
+                            # Clean common WhatsApp poll artifacts (numbers like "1. ", dots, etc.)
+                            import_name = "".join(filter(lambda x: not x.isdigit(), name)).replace(".", "").strip()
+                            if import_name:
+                                conn.table("participants").insert({
+                                    "match_id": match['id'], "nom_complet": import_name, 
+                                    "poste": "Midfielder", "statut": "Confirmed ✅"
+                                }).execute()
+                                import_count += 1
+                    if import_count > 0:
+                        st.success(f"Successfully imported {import_count} players!")
+                        st.rerun()
+
             with st.expander("📝 Edit Match Details"):
                 with st.form("edit_details"):
                     u_lieu = st.text_input("Stadium Name", value=match['lieu'])
@@ -196,20 +217,11 @@ if match:
                 st.rerun()
             
             if any(p.get('team') for p in main_squad):
-                    team_a = [p['nom_complet'] for p in main_squad if p.get('team') == 'A']
-                    team_b = [p['nom_complet'] for p in main_squad if p.get('team') == 'B']
-                    
-                    # Formatting the message for WhatsApp
-                    summary = f"⚽ *Teams:* \n\n*🔵 Team A:* {', '.join(team_a)}\n\n*🔴 Team B:* {', '.join(team_b)}"
-                    encoded_msg = summary.replace(" ", "%20").replace("\n", "%0A")
-                    share_url = f"https://wa.me/?text={encoded_msg}"
-                    
-                    # The button rendering
-                    st.markdown(f'''
-                        <a href="{share_url}" target="_blank" class="wa-btn" style="background-color:#075E54; width:100%; text-align:center; display:block; text-decoration:none;">
-                            📲 Share Teams on WhatsApp Group
-                        </a>
-                    ''', unsafe_allow_html=True)
+                t_a = [p['nom_complet'] for p in main_squad if p.get('team') == 'A']
+                t_b = [p['nom_complet'] for p in main_squad if p.get('team') == 'B']
+                summary = f"⚽ *Teams:* \n\n*🔵 Team A:* {', '.join(t_a)}\n\n*🔴 Team B:* {', '.join(t_b)}"
+                share_url = f"https://wa.me/?text={summary.replace(' ', '%20').replace('\\n', '%0A')}"
+                st.markdown(f'<a href="{share_url}" target="_blank" class="wa-btn" style="background-color:#075E54;">📲 Share Teams on Group</a>', unsafe_allow_html=True)
 
             st.divider()
             with st.expander("🏁 Archive Match"):
