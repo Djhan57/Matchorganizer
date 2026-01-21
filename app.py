@@ -27,7 +27,6 @@ st.markdown("""
         box-shadow: 0 2px 8px rgba(0,0,0,0.2); margin-bottom: 15px;
     }
     
-    /* REALISTIC PITCH DESIGN */
     .pitch-container {
         background-color: #1a472a;
         background-image: 
@@ -84,9 +83,9 @@ with st.sidebar:
             h_start = col1.text_input("Start Time", "20:00")
             h_end = col2.text_input("End Time", "21:00")
             l = st.text_input("Stadium Name")
-            m = st.text_input("Google Maps Link")
+            m_link = st.text_input("Google Maps Link")
             if st.button("Publish Match", use_container_width=True):
-                conn.table("matches").insert({"date": str(d), "heure": h_start, "heure_fin": h_end, "lieu": l, "maps_url": m, "is_finished": False}).execute()
+                conn.table("matches").insert({"date": str(d), "heure": h_start, "heure_fin": h_end, "lieu": l, "maps_url": m_link, "is_finished": False}).execute()
                 st.rerun()
 
 # --- MAIN UI ---
@@ -95,20 +94,32 @@ st.title("⚽ Hali Saha Pro")
 if match:
     limite_joueurs = 10
     main_squad = joueurs[:limite_joueurs]
+    reserve_list = joueurs[limite_joueurs:]
     
     st.markdown(f"""
     <div class="match-card">
         <h3>📅 Match: {match['date']}</h3>
         <p>⏱️ <b>{match['heure']} — {match.get('heure_fin', 'N/A')}</b> | 📍 {match['lieu']}</p>
-        <p>👥 <b>{len(main_squad)} / {limite_joueurs} Players</b></p>
+        <p>👥 <b>{len(main_squad)} / {limite_joueurs} Players</b> (+{len(reserve_list)} reserve)</p>
     </div>
     """, unsafe_allow_html=True)
     
-    t1, t2, t3, t4 = st.tabs(["📋 Register", "🏟️ Pitch", "⚙️ Admin", "📜 History"])
+    t1, t2, t3, t4 = st.tabs(["📋 Squad", "🏟️ Pitch", "⚙️ Admin", "📜 History"])
 
     with t1:
         st.link_button("🗺️ Open Location", match['maps_url'], use_container_width=True)
+        st.subheader("Main Squad")
+        for i, p in enumerate(main_squad):
+            st.write(f"{i+1}. **{p['nom_complet']}** ({'⭐' * p.get('level', 3)})")
+        
+        if reserve_list:
+            st.divider()
+            st.subheader("Reserve List")
+            for i, p in enumerate(reserve_list):
+                st.write(f"{i+1}. {p['nom_complet']} (Waiting...)")
+
         with st.form("reg_form"):
+            st.write("---")
             n = st.text_input("Full Name")
             col_p1, col_p2 = st.columns([1, 4])
             col_p1.text_input("Country", "+32", disabled=True)
@@ -128,6 +139,7 @@ if match:
         team_a_p = [p for p in main_squad if p.get('team') == 'A']
         team_b_p = [p for p in main_squad if p.get('team') == 'B']
         others = [p for p in main_squad if p.get('team') not in ['A', 'B']]
+        
         def draw_team(p_list, side):
             h = ""
             for i, p in enumerate(p_list[:5]):
@@ -136,6 +148,7 @@ if match:
                 t_cl = "team-a" if side == "left" else "team-b"
                 h += f'<div class="player-label {t_cl}" style="top:{coords["y"]}%; left:{x}%;">{p["nom_complet"]}</div>'
             return h
+        
         pitch_html += draw_team(team_a_p, "left")
         pitch_html += draw_team(team_b_p, "right")
         for i, p in enumerate(others):
@@ -144,36 +157,65 @@ if match:
 
     with t3:
         if is_admin:
-            # NEW: GROUP REMINDER SECTION
-            with st.expander("📢 Group Announcement"):
-                st.write("Send a reminder to the group to invite players to sign up.")
-                # Change the URL below to your actual deployed app link!
+            # 1. GROUP ANNOUNCEMENT (WITH PLAYERS & TEAMS)
+            with st.expander("📢 Group Announcement", expanded=True):
                 app_url = "https://matchorganizer.streamlit.app/" 
                 
-                reminder_msg = (
-                    f"⚽ *NEW MATCH SCHEDULED!*\n\n"
+                # Build strings
+                squad_text = "*📋 Main Squad:*\n"
+                for i, p in enumerate(main_squad):
+                    squad_text += f"{i+1}. {p['nom_complet']}\n"
+                
+                team_text = ""
+                t_a_names = [p['nom_complet'] for p in main_squad if p.get('team') == 'A']
+                t_b_names = [p['nom_complet'] for p in main_squad if p.get('team') == 'B']
+                if t_a_names or t_b_names:
+                    team_text = f"\n*🔵 Team A:* {', '.join(t_a_names)}\n*🔴 Team B:* {', '.join(t_b_names)}\n"
+
+                res_text = ""
+                if reserve_list:
+                    res_text = "\n*⏳ Reserve List:*\n"
+                    for p in reserve_list:
+                        res_text += f"- {p['nom_complet']}\n"
+
+                full_msg = (
+                    f"⚽ *HALI SAHA MATCH SHEET*\n\n"
                     f"📅 *Date:* {match['date']}\n"
                     f"⏰ *Time:* {match['heure']} - {match.get('heure_fin', 'N/A')}\n"
                     f"📍 *Lieu:* {match['lieu']}\n"
-                    f"🗺️ *Maps:* {match['maps_url']}\n\n"
-                    f"📝 *Register here:* {app_url}"
+                    f"{team_text}"
+                    f"{squad_text}"
+                    f"{res_text}\n"
+                    f"📝 *Join/View:* {app_url}"
                 )
                 
-                encoded_reminder = reminder_msg.replace(" ", "%20").replace("\n", "%0A")
-                wa_reminder_url = f"https://wa.me/?text={encoded_reminder}"
-                
-                st.markdown(f'<a href="{wa_reminder_url}" target="_blank" class="wa-btn" style="background-color:#128C7E;">📢 Send Group Invitation</a>', unsafe_allow_html=True)
+                encoded_msg = full_msg.replace(" ", "%20").replace("\n", "%0A")
+                st.markdown(f'<a href="https://wa.me/?text={encoded_msg}" target="_blank" class="wa-btn" style="background-color:#128C7E;">📢 Share Full Match Sheet</a>', unsafe_allow_html=True)
 
-            st.divider()
-            with st.expander("📥 Bulk Import (WhatsApp Poll)"):
-                bulk_input = st.text_area("Paste List Names", height=100)
-                if st.button("Bulk Import", use_container_width=True):
+            # 2. BULK IMPORT & LEVEL EDIT
+            with st.expander("📥 Bulk Import & Edit Levels"):
+                bulk_input = st.text_area("Paste Names (One per line)", height=100)
+                if st.button("Import", use_container_width=True):
                     for line in bulk_input.split('\n'):
                         name = "".join(filter(lambda x: not x.isdigit(), line)).replace(".", "").strip()
                         if name: conn.table("participants").insert({"match_id": match['id'], "nom_complet": name, "level": 3}).execute()
                     st.rerun()
+                
+                st.write("---")
+                st.write("Edit Player Levels:")
+                for j in joueurs:
+                    c1, c2, c3 = st.columns([3, 2, 1])
+                    c1.write(j['nom_complet'])
+                    new_lvl = c2.select_slider("Lvl", [1,2,3,4,5], value=j.get('level', 3), key=f"ed_{j['id']}")
+                    if new_lvl != j.get('level'):
+                        conn.table("participants").update({"level": new_lvl}).eq("id", j['id']).execute()
+                        st.rerun()
+                    if c3.button("❌", key=f"del_{j['id']}"):
+                        conn.table("participants").delete().eq("id", j['id']).execute()
+                        st.rerun()
 
-            with st.expander("⚖️ Balancing & Teams"):
+            # 3. BALANCING
+            with st.expander("⚖️ Team Organization"):
                 if st.button("🔀 Balance Teams (Snake Draft)", use_container_width=True):
                     sorted_p = sorted(main_squad, key=lambda x: x.get('level', 3), reverse=True)
                     assign = ['A', 'B', 'B', 'A', 'A', 'B', 'B', 'A', 'A', 'B']
@@ -181,12 +223,9 @@ if match:
                         if i < len(assign): conn.table("participants").update({"team": assign[i]}).eq("id", p['id']).execute()
                     st.rerun()
                 
-                if any(p.get('team') for p in main_squad):
-                    t_a = [p['nom_complet'] for p in main_squad if p.get('team') == 'A']
-                    t_b = [p['nom_complet'] for p in main_squad if p.get('team') == 'B']
-                    team_msg = f"⚽ *Balanced Teams:* \n\n*🔵 Team A:* {', '.join(t_a)}\n\n*🔴 Team B:* {', '.join(t_b)}"
-                    encoded_team = team_msg.replace(" ", "%20").replace("\n", "%0A")
-                    st.markdown(f'<a href="https://wa.me/?text={encoded_team}" target="_blank" class="wa-btn" style="background-color:#075E54;">📲 Share Teams</a>', unsafe_allow_html=True)
+                if st.button("🗑️ Clear Teams", type="secondary", use_container_width=True):
+                    conn.table("participants").update({"team": None}).eq("match_id", match['id']).execute()
+                    st.rerun()
 
             with st.expander("🗑️ Danger Zone"):
                 if st.button("Delete Match", type="primary"):
