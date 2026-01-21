@@ -97,7 +97,7 @@ with st.sidebar:
                 st.rerun()
 
 # --- MAIN UI ---
-st.title("⚽ Hali Saha Pro")
+st.title("⚽ Football pro")
 
 if match:
     limite_joueurs = 10
