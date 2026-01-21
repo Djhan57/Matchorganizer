@@ -78,7 +78,7 @@ match, joueurs, history = get_data()
 with st.sidebar:
     st.header("🔐 Admin Panel")
     pw = st.text_input("Access Code", type="password")
-    is_admin = (pw == "VOTRE_MOT_DE_PASSE")
+    is_admin = (pw == "foot!")
     
     if is_admin:
         st.divider()
