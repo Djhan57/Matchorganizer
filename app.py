@@ -148,7 +148,7 @@ if match:
             with st.expander("📢 Group Announcement"):
                 st.write("Send a reminder to the group to invite players to sign up.")
                 # Change the URL below to your actual deployed app link!
-                app_url = "https://your-app-link.streamlit.app" 
+                app_url = "https://matchorganizer.streamlit.app/" 
                 
                 reminder_msg = (
                     f"⚽ *NEW MATCH SCHEDULED!*\n\n"
