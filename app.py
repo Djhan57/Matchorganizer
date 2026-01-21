@@ -17,47 +17,60 @@ except:
 # --- CSS STYLE ---
 st.markdown("""
     <style>
-    :root { --card-bg: #ffffff; --card-text: #1e2d24; --pitch-line: white; }
+    :root { --card-bg: #ffffff; --card-text: #1e2d24; }
     @media (prefers-color-scheme: dark) {
-        :root { --card-bg: #1e1e1e; --card-text: #ffffff; --pitch-line: rgba(255,255,255,0.6); }
-        .stApp { background-color: #0e1117; }
+        :root { --card-bg: #1e1e1e; --card-text: #ffffff; }
     }
     .match-card { 
         background-color: var(--card-bg); color: var(--card-text);
         padding: 20px; border-radius: 15px; border-left: 5px solid #2e7d32; 
         box-shadow: 0 2px 8px rgba(0,0,0,0.2); margin-bottom: 15px;
     }
+    
+    /* REALISTIC PITCH DESIGN */
     .pitch-container {
-        background-color: #2d5a27;
+        background-color: #1a472a;
         background-image: 
-            linear-gradient(var(--pitch-line) 2px, transparent 2px),
-            linear-gradient(90deg, var(--pitch-line) 2px, transparent 2px),
-            linear-gradient(90deg, transparent 49.5%, var(--pitch-line) 50%, transparent 50.5%),
-            radial-gradient(circle at center, transparent 0, transparent 40px, var(--pitch-line) 40px, var(--pitch-line) 42px, transparent 42px);
-        background-size: 100% 50%, 50% 100%, 100% 100%, 100% 100%;
-        border: 3px solid var(--pitch-line); height: 500px; width: 100%; position: relative; border-radius: 10px; margin-top: 20px; overflow: hidden;
+            /* Grass Pattern */
+            repeating-linear-gradient(90deg, transparent, transparent 10%, rgba(255,255,255,0.05) 10%, rgba(255,255,255,0.05) 20%),
+            /* Center Line */
+            linear-gradient(90deg, transparent 49.7%, rgba(255,255,255,0.8) 50%, transparent 50.3%),
+            /* Center Circle */
+            radial-gradient(circle at center, transparent 40px, rgba(255,255,255,0.8) 40px, rgba(255,255,255,0.8) 42px, transparent 42px);
+        border: 4px solid rgba(255,255,255,0.9);
+        height: 520px; width: 100%; position: relative; border-radius: 8px; margin-top: 20px; overflow: hidden;
+        box-shadow: inset 0 0 50px rgba(0,0,0,0.5);
     }
+    
+    /* Goal Areas */
+    .pitch-container::before, .pitch-container::after {
+        content: ""; position: absolute; top: 25%; height: 50%; width: 50px; border: 2px solid rgba(255,255,255,0.8);
+    }
+    .pitch-container::before { left: -2px; border-radius: 0 10px 10px 0; }
+    .pitch-container::after { right: -2px; border-radius: 10px 0 0 10px; }
+
     .player-label {
-        padding: 4px 10px; border-radius: 12px; font-weight: bold; font-size: 11px;
-        position: absolute; transform: translate(-50%, -50%); box-shadow: 0 2px 4px rgba(0,0,0,0.3); white-space: nowrap; z-index: 100;
+        padding: 5px 12px; border-radius: 6px; font-weight: bold; font-size: 12px;
+        position: absolute; transform: translate(-50%, -50%); box-shadow: 0 4px 6px rgba(0,0,0,0.4); 
+        white-space: nowrap; z-index: 100; transition: all 0.3s;
     }
-    .team-a { background: #3b82f6 !important; color: white !important; border: 2px solid white !important; }
-    .team-b { background: #ef4444 !important; color: white !important; border: 2px solid white !important; }
-    .no-team { background: white !important; color: black !important; border: 1px solid #2e7d32 !important; }
+    .team-a { background: linear-gradient(135deg, #1e40af, #3b82f6); color: white; border: 1.5px solid white; }
+    .team-b { background: linear-gradient(135deg, #991b1b, #ef4444); color: white; border: 1.5px solid white; }
+    .no-team { background: #f8fafc; color: #1e293b; border: 1px solid #94a3b8; }
     .wa-btn { background-color: #25D366; color: white !important; padding: 10px 15px; border-radius: 8px; text-decoration: none; font-weight: bold; display: block; text-align: center; margin-top: 10px; }
     </style>
     """, unsafe_allow_html=True)
 
 # --- DIALOGS ---
 @st.dialog("Confirm Registration")
-def confirm_registration(name, phone, position, match_id, is_waiting):
-    st.write(f"**Name:** {name} | **Phone:** +{phone}")
-    if is_waiting: st.warning("⚠️ The squad is full. You will join the **Waiting List**.")
-    else: st.success("✅ Joining the **Main Squad**.")
+def confirm_registration(name, phone, level, match_id, is_waiting):
+    st.write(f"**Name:** {name} | **Skill Level:** {'⭐' * level}")
+    if is_waiting: st.warning("⚠️ Full. Joining Waiting List.")
+    else: st.success("✅ Joining Main Squad.")
     if st.button("Confirm & Sign Up", use_container_width=True):
         conn.table("participants").insert({
             "match_id": match_id, "nom_complet": name, 
-            "phone": phone, "poste": position, "statut": "Confirmed ✅"
+            "phone": phone, "level": level, "statut": "Confirmed ✅"
         }).execute()
         st.rerun()
 
@@ -78,7 +91,7 @@ match, joueurs, history = get_data()
 with st.sidebar:
     st.header("🔐 Admin Panel")
     pw = st.text_input("Access Code", type="password")
-    is_admin = (pw == "foot!")
+    is_admin = (pw == "YOUR_PASSWORD") # Replace with your password
     
     if is_admin:
         st.divider()
@@ -90,14 +103,11 @@ with st.sidebar:
             l = st.text_input("Stadium Name")
             m = st.text_input("Google Maps Link")
             if st.button("Publish Match", use_container_width=True):
-                conn.table("matches").insert({
-                    "date": str(d), "heure": h_start, "heure_fin": h_end, 
-                    "lieu": l, "maps_url": m, "is_finished": False
-                }).execute()
+                conn.table("matches").insert({"date": str(d), "heure": h_start, "heure_fin": h_end, "lieu": l, "maps_url": m, "is_finished": False}).execute()
                 st.rerun()
 
 # --- MAIN UI ---
-st.title("⚽ Football pro")
+st.title("⚽ Hali Saha Pro")
 
 if match:
     limite_joueurs = 10
@@ -108,29 +118,30 @@ if match:
     <div class="match-card">
         <h3>📅 Match: {match['date']}</h3>
         <p>⏱️ <b>{match['heure']} — {match.get('heure_fin', 'N/A')}</b> | 📍 {match['lieu']}</p>
-        <p>👥 <b>{len(main_squad)} / {limite_joueurs} Players</b> (+{len(waiting_list)} waiting)</p>
+        <p>👥 <b>{len(main_squad)} / {limite_joueurs} Players</b></p>
     </div>
     """, unsafe_allow_html=True)
     
-    t1, t2, t3, t4 = st.tabs(["📋 Register", "🏟️ Pitch (1-2-2)", "⚙️ Admin", "📜 History"])
+    t1, t2, t3, t4 = st.tabs(["📋 Register", "🏟️ Balanced Pitch", "⚙️ Admin", "📜 History"])
 
     with t1:
         st.link_button("🗺️ Open Location", match['maps_url'], use_container_width=True)
         with st.form("reg_form"):
             n = st.text_input("Full Name")
-            col1, col2 = st.columns([1, 4])
-            col1.text_input("Country", "+32", disabled=True)
-            ph_raw = col2.text_input("Phone Number", placeholder="470123456")
-            p = st.selectbox("Position (Visual only)", ["Goalkeeper", "Defender", "Midfielder", "Forward"])
+            col_p1, col_p2 = st.columns([1, 4])
+            col_p1.text_input("Country", "+32", disabled=True)
+            ph_raw = col_p2.text_input("Phone Number", placeholder="470123456")
+            lvl = st.select_slider("Select Skill Level", options=[1, 2, 3, 4, 5], value=3)
             if st.form_submit_button("Join Match", use_container_width=True):
-                if n and ph_raw:
+                if n:
                     clean = "".join(filter(str.isdigit, ph_raw)).lstrip('0')
                     if clean.startswith("32"): clean = clean[2:]
-                    confirm_registration(n, f"32{clean}", p, match['id'], len(main_squad) >= limite_joueurs)
-                else: st.error("Fields missing.")
+                    confirm_registration(n, f"32{clean}", lvl, match['id'], len(main_squad) >= limite_joueurs)
+                else: st.error("Please enter a name.")
 
     with t2:
-        st.subheader("Automated 1-2-2 Lineup")
+        st.subheader("Balanced 1-2-2 Lineup")
+        
         pitch_html = '<div class="pitch-container">'
         formation_coords = [{"y": 88, "x": 50}, {"y": 65, "x": 25}, {"y": 65, "x": 75}, {"y": 25, "x": 25}, {"y": 25, "x": 75}]
         
@@ -155,67 +166,42 @@ if match:
 
     with t3:
         if is_admin:
-            st.subheader("⚙️ Match Management")
-            
-            with st.expander("📥 Bulk Import from WhatsApp"):
-                st.info("Paste the poll names below (one name per line).")
-                bulk_input = st.text_area("Player List", height=150, placeholder="1. Ahmet\n2. Mehmet\n3. Can...")
+            with st.expander("📥 Bulk Import & Skill Level"):
+                bulk_input = st.text_area("Paste List (one name per line)", height=150)
+                def_lvl = st.slider("Default skill for these players", 1, 5, 3)
                 if st.button("Import Players", use_container_width=True):
-                    lines = bulk_input.split('\n')
-                    import_count = 0
-                    for line in lines:
-                        name = line.strip()
-                        if name:
-                            # Clean common WhatsApp poll artifacts (numbers like "1. ", dots, etc.)
-                            import_name = "".join(filter(lambda x: not x.isdigit(), name)).replace(".", "").strip()
-                            if import_name:
-                                conn.table("participants").insert({
-                                    "match_id": match['id'], "nom_complet": import_name, 
-                                    "poste": "Midfielder", "statut": "Confirmed ✅"
-                                }).execute()
-                                import_count += 1
-                    if import_count > 0:
-                        st.success(f"Successfully imported {import_count} players!")
-                        st.rerun()
+                    for line in bulk_input.split('\n'):
+                        name = "".join(filter(lambda x: not x.isdigit(), line)).replace(".", "").strip()
+                        if name: conn.table("participants").insert({"match_id": match['id'], "nom_complet": name, "level": def_lvl, "statut": "Confirmed ✅"}).execute()
+                    st.rerun()
 
-            with st.expander("📝 Edit Match Details"):
-                with st.form("edit_details"):
-                    u_lieu = st.text_input("Stadium Name", value=match['lieu'])
-                    c1, c2 = st.columns(2)
-                    u_start = c1.text_input("Start Time", value=match['heure'])
-                    u_end = c2.text_input("End Time", value=match.get('heure_fin', ''))
-                    u_maps = st.text_input("Maps Link", value=match['maps_url'])
-                    if st.form_submit_button("Update Info"):
-                        conn.table("matches").update({"lieu": u_lieu, "heure": u_start, "heure_fin": u_end, "maps_url": u_maps}).eq("id", match['id']).execute()
-                        st.rerun()
-
-            with st.expander("❌ Remove Players"):
+            with st.expander("⚖️ Manage Player Levels & Teams"):
+                st.write("Edit levels before balancing:")
                 for j in joueurs:
-                    c1, c2 = st.columns([4, 1])
-                    c1.write(f"{j['nom_complet']} ({j['statut']})")
-                    if c2.button("Kick", key=f"k_{j['id']}"):
+                    col1, col2, col3 = st.columns([3, 2, 1])
+                    col1.write(f"**{j['nom_complet']}**")
+                    new_lvl = col2.select_slider("Level", options=[1,2,3,4,5], value=j.get('level', 3), key=f"lvl_{j['id']}")
+                    if j.get('level') != new_lvl:
+                        conn.table("participants").update({"level": new_lvl}).eq("id", j['id']).execute()
+                        st.rerun()
+                    if col3.button("❌", key=f"del_{j['id']}"):
                         conn.table("participants").delete().eq("id", j['id']).execute()
                         st.rerun()
-            
-            with st.expander("📢 WhatsApp Reminders"):
-                for j in main_squad:
-                    if j.get('phone'):
-                        msg = f"⚽ Match Reminder: Today at {match['heure']}! See you there."
-                        wa_url = f"https://wa.me/{j['phone']}?text={msg.replace(' ', '%20')}"
-                        st.markdown(f'<a href="{wa_url}" target="_blank" class="wa-btn" style="background-color:#25D366; display:inline-block; margin:2px; padding:5px 10px;">Ping {j["nom_complet"]}</a>', unsafe_allow_html=True)
+                
+                st.divider()
+                if st.button("🔀 Generate Balanced Teams (Snake Draft)", use_container_width=True):
+                    # Snake Draft: A, B, B, A, A, B, B, A, A, B
+                    sorted_players = sorted(main_squad, key=lambda x: x.get('level', 3), reverse=True)
+                    assignment = ['A', 'B', 'B', 'A', 'A', 'B', 'B', 'A', 'A', 'B']
+                    for i, p in enumerate(sorted_players):
+                        if i < len(assignment):
+                            conn.table("participants").update({"team": assignment[i]}).eq("id", p['id']).execute()
+                    st.rerun()
 
-            st.divider()
-            st.subheader("🔀 Team Management")
-            col_gen, col_clear = st.columns(2)
-            if col_gen.button("🔀 Generate Teams"):
-                shuffled = main_squad.copy(); random.shuffle(shuffled)
-                for i, p in enumerate(shuffled):
-                    conn.table("participants").update({"team": 'A' if i % 2 == 0 else 'B'}).eq("id", p['id']).execute()
-                st.rerun()
-            if col_clear.button("🗑️ Clear Teams"):
-                conn.table("participants").update({"team": None}).eq("match_id", match['id']).execute()
-                st.rerun()
-            
+                if st.button("🗑️ Reset Teams", type="secondary", use_container_width=True):
+                    conn.table("participants").update({"team": None}).eq("match_id", match['id']).execute()
+                    st.rerun()
+
             if any(p.get('team') for p in main_squad):
                     team_a = [p['nom_complet'] for p in main_squad if p.get('team') == 'A']
                     team_b = [p['nom_complet'] for p in main_squad if p.get('team') == 'B']
@@ -232,22 +218,23 @@ if match:
                         </a>
                     ''', unsafe_allow_html=True)
 
-            st.divider()
-            with st.expander("🏁 Archive Match"):
-                with st.form("score"):
-                    sa, sb = st.number_input("Team A", 0), st.number_input("Team B", 0)
-                    if st.form_submit_button("Save & Archive"):
-                        conn.table("matches").update({"score_a": sa, "score_b": sb, "is_finished": True}).eq("id", match['id']).execute()
+            with st.expander("📝 Edit Match & Archive"):
+                with st.form("edit_details"):
+                    u_lieu = st.text_input("Stadium", value=match['lieu'])
+                    u_start = st.text_input("Start", value=match['heure'])
+                    u_end = st.text_input("End", value=match.get('heure_fin', ''))
+                    if st.form_submit_button("Update"):
+                        conn.table("matches").update({"lieu": u_lieu, "heure": u_start, "heure_fin": u_end}).eq("id", match['id']).execute()
                         st.rerun()
-
-            if st.checkbox("Enable Deletion"):
-                if st.button("Delete Entire Match", type="primary"):
-                    conn.table("participants").delete().eq("match_id", match['id']).execute()
-                    conn.table("matches").delete().eq("id", match['id']).execute()
+                
+                st.divider()
+                sa, sb = st.number_input("Final Score: Team A", 0), st.number_input("Team B", 0)
+                if st.button("Archive Match"):
+                    conn.table("matches").update({"score_a": sa, "score_b": sb, "is_finished": True}).eq("id", match['id']).execute()
                     st.rerun()
         else: st.info("Enter admin code in sidebar.")
 
     with t4:
-        for hm in history: st.write(f"📅 {hm['date']} | Team A {hm['score_a']} - {hm['score_b']} Team B")
+        for hm in history: st.write(f"📅 {hm['date']} | A {hm['score_a']} - {hm['score_b']} B")
 else:
     st.info("No active match. Create one in the Sidebar.")
